@@ -29,7 +29,7 @@ const Header = () => {
           </Button>
           <Button size="sm" className="bg-gradient-primary hover:shadow-medium transition-spring">
             <Upload className="w-4 h-4 mr-2" />
-            Upload STEP
+            <a href="/workspace" className="text-primary-foreground">Upload STEP</a>
           </Button>
         </div>
       </div>

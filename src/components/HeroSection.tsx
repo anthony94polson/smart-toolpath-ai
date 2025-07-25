@@ -27,7 +27,7 @@ const HeroSection = () => {
             <div className="flex flex-col sm:flex-row gap-4">
               <Button size="lg" className="bg-gradient-primary hover:shadow-medium transition-spring">
                 <Upload className="w-5 h-5 mr-2" />
-                Upload STEP File
+                <a href="/workspace" className="text-primary-foreground">Upload STEP File</a>
               </Button>
               <Button variant="outline" size="lg" className="hover:bg-muted transition-smooth">
                 <Play className="w-5 h-5 mr-2" />
