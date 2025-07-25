@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, EyeOff, Settings, Target } from "lucide-react";
+import Model3DViewer from "./Model3DViewer";
 
 interface Feature {
   id: string;
@@ -110,6 +111,11 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetect
     );
   };
 
+  const toggleFeatureVisibility = (featureId: string) => {
+    // In a real app, this would update the features state
+    console.log(`Toggle visibility for feature ${featureId}`);
+  };
+
   const handleProceedToTooling = () => {
     const selected = features.filter(f => selectedFeatures.includes(f.id));
     onFeaturesSelected(selected);
@@ -185,7 +191,14 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetect
                         <Badge className="bg-accent">
                           {feature.toolRecommendation}
                         </Badge>
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFeatureVisibility(feature.id);
+                          }}
+                        >
                           {feature.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                         </Button>
                       </div>
@@ -197,20 +210,27 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetect
           </TabsContent>
           
           <TabsContent value="3d">
-            <Card className="p-8 text-center">
-              <div className="bg-muted rounded-lg h-64 flex items-center justify-center mb-4">
-                <div className="text-center">
-                  <Target className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-muted-foreground">3D visualization would render here</p>
-                  <p className="text-sm text-muted-foreground">Interactive model with highlighted features</p>
-                </div>
+            <Card className="p-6">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold mb-2">3D Model View</h3>
+                <p className="text-sm text-muted-foreground">
+                  Click features to select them. Use mouse to orbit, scroll to zoom.
+                </p>
               </div>
-              <div className="flex justify-center space-x-2">
+              
+              <Model3DViewer
+                features={features}
+                selectedFeatures={selectedFeatures}
+                onFeatureClick={toggleFeatureSelection}
+              />
+              
+              <div className="flex justify-center space-x-2 mt-4">
                 <Button variant="outline" size="sm">
                   <Settings className="w-4 h-4 mr-2" />
                   View Options
                 </Button>
                 <Button variant="outline" size="sm">Reset View</Button>
+                <Button variant="outline" size="sm">Export View</Button>
               </div>
             </Card>
           </TabsContent>

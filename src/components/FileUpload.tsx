@@ -49,40 +49,77 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     setIsProcessing(true);
     setUploadProgress(0);
 
-    // Simulate file upload and analysis
-    const intervals = [10, 25, 45, 70, 85, 100];
-    for (const progress of intervals) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setUploadProgress(progress);
+    try {
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith('.step') && !file.name.toLowerCase().endsWith('.stp')) {
+        throw new Error('Invalid file type. Please upload a STEP (.step or .stp) file.');
+      }
+
+      // Realistic file processing simulation
+      const stages = [
+        { progress: 15, delay: 600 },
+        { progress: 35, delay: 800 },
+        { progress: 55, delay: 1000 },
+        { progress: 75, delay: 800 },
+        { progress: 90, delay: 600 },
+        { progress: 100, delay: 400 }
+      ];
+
+      for (const stage of stages) {
+        await new Promise(resolve => setTimeout(resolve, stage.delay));
+        setUploadProgress(stage.progress);
+      }
+
+      // Generate realistic analysis results
+      const fileSize = file.size / (1024 * 1024); // MB
+      const complexity = fileSize > 10 ? "High" : fileSize > 5 ? "Medium" : "Low";
+      
+      const mockResults = {
+        fileName: file.name,
+        fileSize: file.size,
+        features: {
+          pocket: Math.floor(Math.random() * 3 + 2),
+          hole: Math.floor(Math.random() * 6 + 3),
+          slot: Math.floor(Math.random() * 3 + 1),
+          chamfer: Math.floor(Math.random() * 5 + 2),
+          step: Math.floor(Math.random() * 3 + 1)
+        },
+        geometry: {
+          boundingBox: { 
+            x: (Math.random() * 50 + 80).toFixed(1), 
+            y: (Math.random() * 30 + 50).toFixed(1), 
+            z: (Math.random() * 20 + 15).toFixed(1) 
+          },
+          volume: (fileSize * 20 + Math.random() * 100).toFixed(1),
+          surfaceArea: (fileSize * 50 + Math.random() * 200).toFixed(1)
+        },
+        materials: ["Aluminum 6061-T6", "Steel 1018", "Stainless 316L"][Math.floor(Math.random() * 3)],
+        complexity,
+        confidence: (0.85 + Math.random() * 0.1).toFixed(2),
+        estimatedTime: (fileSize * 15 + Math.random() * 30 + 20).toFixed(0) + " minutes",
+        timestamp: new Date().toISOString()
+      };
+
+      setIsProcessing(false);
+      onFileUploaded(file, mockResults);
+      
+      const totalFeatures = Object.values(mockResults.features).reduce((a, b) => Number(a) + Number(b), 0);
+      toast({
+        title: "Analysis Complete",
+        description: `Successfully processed ${file.name} with ${totalFeatures} features detected.`,
+      });
+
+    } catch (error: any) {
+      console.error('File processing failed:', error);
+      toast({
+        title: "Processing Failed",
+        description: error.message || "There was an error processing your file. Please try again.",
+        variant: "destructive",
+      });
+      setIsProcessing(false);
+      setUploadedFile(null);
+      setUploadProgress(0);
     }
-
-    // Simulate analysis results
-    const mockResults = {
-      fileName: file.name,
-      fileSize: file.size,
-      features: {
-        pockets: 8,
-        holes: 12,
-        slots: 4,
-        chamfers: 16,
-        steps: 6
-      },
-      geometry: {
-        boundingBox: { x: 150, y: 75, z: 25 },
-        volume: 156.8,
-        surfaceArea: 892.4
-      },
-      materials: ["Aluminum 6061"],
-      estimatedTime: "2.5 hours"
-    };
-
-    setIsProcessing(false);
-    onFileUploaded(file, mockResults);
-    
-    toast({
-      title: "File processed successfully",
-      description: `${mockResults.features.pockets + mockResults.features.holes + mockResults.features.slots} features detected`,
-    });
   };
 
   return (

@@ -90,39 +90,77 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete }: ToolpathG
     setIsGenerating(true);
     setGenerationProgress(0);
 
-    const steps = [
-      "Calculating approach strategies...",
-      "Generating rough toolpaths...", 
-      "Optimizing tool movements...",
-      "Creating finish passes...",
-      "Validating tool clearances...",
-      "Finalizing G-code..."
+    const stages = [
+      "Analyzing tool assignments and features...",
+      "Computing optimal entry and exit points...", 
+      "Generating adaptive roughing strategies...",
+      "Calculating precision finishing passes...",
+      "Optimizing tool change sequences...",
+      "Running collision detection analysis...",
+      "Validating feed rates and speeds...",
+      "Generating verified G-code output..."
     ];
 
-    for (let i = 0; i <= 100; i += 20) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setGenerationProgress(i);
-    }
+    try {
+      for (let i = 0; i < stages.length; i++) {
+        // Simulate realistic processing time
+        const delay = 700 + Math.random() * 400;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        setGenerationProgress(((i + 1) / stages.length) * 100);
+      }
 
-    setIsGenerating(false);
+      setIsGenerating(false);
+    } catch (error) {
+      console.error('Toolpath generation failed:', error);
+      setIsGenerating(false);
+    }
   };
 
   const startSimulation = async () => {
     setIsSimulating(true);
     setSimulationProgress(0);
 
-    for (let i = 0; i <= 100; i += 5) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      setSimulationProgress(i);
-    }
+    try {
+      for (let i = 0; i <= 100; i += 2) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        setSimulationProgress(i);
+      }
 
-    setIsSimulating(false);
-    onSimulationComplete({
-      totalTime: "43 minutes",
-      materialRemoved: "156.8 cm³",
-      toolChanges: 3,
-      warnings: 1
-    });
+      // Calculate realistic results based on operations
+      const totalFeatures = toolAssignments.length;
+      const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
+      const estimatedTime = operations.reduce((sum, op) => {
+        const minutes = parseInt(op.estimatedTime.split(' ')[0]);
+        return sum + minutes;
+      }, 0);
+
+      const setupTime = uniqueTools * 2; // 2 min per tool change
+      const actualTime = estimatedTime + setupTime;
+
+      const results = {
+        totalTime: `${actualTime} minutes`,
+        machiningTime: estimatedTime,
+        setupTime: setupTime,
+        toolChanges: uniqueTools,
+        operations: totalFeatures,
+        totalDistance: (estimatedTime * 85 + Math.random() * 1000).toFixed(1),
+        materialRemoved: (totalFeatures * 2.5 + Math.random() * 5).toFixed(1) + " cm³",
+        quality: actualTime < 30 ? "Excellent" : actualTime < 60 ? "Good" : "Fair",
+        warnings: uniqueTools > 5 ? 2 : Math.random() > 0.7 ? 1 : 0,
+        gcode: {
+          lines: Math.floor(totalFeatures * 800 + estimatedTime * 50),
+          size: (totalFeatures * 45 + estimatedTime * 3.2).toFixed(1) + " KB"
+        },
+        efficiency: Math.min(95, 70 + (30 - actualTime) / 2)
+      };
+
+      setIsSimulating(false);
+      onSimulationComplete(results);
+    } catch (error) {
+      console.error('Simulation failed:', error);
+      setIsSimulating(false);
+    }
   };
 
   const getOperationIcon = (type: string) => {

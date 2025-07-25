@@ -146,12 +146,65 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
   };
 
   const handleProceedToToolpaths = () => {
-    const assignments = selectedFeatures.map(feature => ({
-      feature,
-      tool: tools.find(t => t.id === toolAssignments[feature.id]),
-      strategy: getDefaultStrategy(feature.type)
-    }));
-    onToolsAssigned(assignments);
+    // Auto-assign tools if none selected
+    if (Object.keys(toolAssignments).length === 0) {
+      const autoAssignments = selectedFeatures.map(feature => {
+        const suitableTools = tools.filter(tool => 
+          tool.compatibility.includes(feature.type)
+        );
+        const bestTool = suitableTools[0] || tools[0];
+        
+        return {
+          id: `${feature.id}-${bestTool.id}`,
+          featureId: feature.id,
+          toolId: bestTool.id,
+          toolName: bestTool.name,
+          featureType: feature.type,
+          strategy: getDefaultStrategy(feature.type),
+          parameters: getDefaultParameters(bestTool, feature),
+          estimatedTime: calculateEstimatedTime(bestTool, feature)
+        };
+      });
+      
+      onToolsAssigned(autoAssignments);
+    } else {
+      const assignments = selectedFeatures.map(feature => {
+        const toolId = toolAssignments[feature.id];
+        const tool = tools.find(t => t.id === toolId);
+        
+        return {
+          id: `${feature.id}-${toolId}`,
+          featureId: feature.id,
+          toolId: toolId,
+          toolName: tool?.name || 'Unknown Tool',
+          featureType: feature.type,
+          strategy: getDefaultStrategy(feature.type),
+          parameters: tool ? getDefaultParameters(tool, feature) : {},
+          estimatedTime: tool ? calculateEstimatedTime(tool, feature) : 0
+        };
+      }).filter(assignment => assignment.toolName !== 'Unknown Tool');
+      
+      onToolsAssigned(assignments);
+    }
+  };
+
+  const getDefaultParameters = (tool: Tool, feature: any) => {
+    const baseSpeed = tool.maxRPM * 0.6;
+    const baseFeed = baseSpeed * tool.flutes * 0.1;
+    
+    return {
+      spindleSpeed: Math.round(baseSpeed),
+      feedRate: Math.round(baseFeed),
+      stepdown: Math.min(tool.diameter * 0.3, feature.dimensions?.depth || tool.diameter),
+      stepover: tool.diameter * 0.4
+    };
+  };
+
+  const calculateEstimatedTime = (tool: Tool, feature: any) => {
+    const volume = feature.dimensions ? 
+      Object.values(feature.dimensions).reduce((a: number, b: any) => a * Number(b), 1) : 100;
+    const mrr = tool.diameter * 0.5; // Material removal rate approximation
+    return Math.round((Number(volume) / mrr) * 1.5 + Math.random() * 5);
   };
 
   const getDefaultStrategy = (featureType: string) => {

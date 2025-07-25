@@ -26,6 +26,19 @@ interface SimulationResultsProps {
 }
 
 const SimulationResults = ({ results, onExport, onStartOver }: SimulationResultsProps) => {
+  
+  const handleExportFormat = (extension: string) => {
+    // Create mock export file based on format
+    const content = `# MachinaCAM Export - ${extension}\n# Generated: ${new Date().toISOString()}\n# Total Time: ${results.totalTime}\n# Tool Changes: ${results.toolChanges}\n\n# This is a demo export file`;
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `machina-export-${Date.now()}${extension}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const exportOptions = [
     { name: "G-Code (ISO)", extension: ".nc", description: "Standard CNC format" },
     { name: "Mastercam", extension: ".mcam", description: "Native Mastercam file" },
@@ -150,7 +163,11 @@ const SimulationResults = ({ results, onExport, onStartOver }: SimulationResults
                   </div>
                   <div className="flex items-center space-x-2">
                     <Badge variant="outline">{option.extension}</Badge>
-                    <Button variant="ghost" size="sm">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleExportFormat(option.extension)}
+                    >
                       <Download className="w-4 h-4" />
                     </Button>
                   </div>
