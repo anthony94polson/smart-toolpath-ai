@@ -83,6 +83,12 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
             feature.dimensions.length,
             feature.dimensions.depth
           );
+        case 'chamfer':
+          return new THREE.ConeGeometry(
+            feature.dimensions.size || 3,
+            feature.dimensions.size || 3,
+            8
+          );
         default:
           return new THREE.SphereGeometry(2);
       }
@@ -92,22 +98,32 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
       if (isSelected) return '#3b82f6'; // blue for selected
       switch (feature.type) {
         case 'pocket': return '#ef4444'; // red
-        case 'hole': return '#10b981'; // green
+        case 'hole': return '#10b981'; // green  
         case 'slot': return '#f59e0b'; // yellow
         case 'chamfer': return '#8b5cf6'; // purple
+        case 'step': return '#ec4899'; // pink
         default: return '#6b7280'; // gray
       }
+    };
+
+    const getFeaturePosition = (): [number, number, number] => {
+      // Get part dimensions for proper positioning
+      const partWidth = analysisResults?.geometry?.boundingBox?.x ? parseFloat(analysisResults.geometry.boundingBox.x) : 120;
+      const partHeight = analysisResults?.geometry?.boundingBox?.y ? parseFloat(analysisResults.geometry.boundingBox.y) : 80;
+      
+      // Convert feature position to be relative to part center
+      return [
+        feature.position.x - partWidth/2,
+        feature.position.y - partHeight/2,
+        feature.position.z + (feature.dimensions.depth || 0)/2
+      ];
     };
 
     if (!feature.visible) return null;
 
     return (
       <mesh
-        position={[
-          feature.position.x - 60,
-          feature.position.y - 40,
-          feature.position.z
-        ]}
+        position={getFeaturePosition()}
         onClick={() => onFeatureClick?.(feature.id)}
         onPointerOver={(e) => {
           e.stopPropagation();
@@ -121,10 +137,21 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
         <meshStandardMaterial
           color={getFeatureColor()}
           transparent
-          opacity={isSelected ? 0.8 : 0.6}
-          emissive={isSelected ? '#1e40af' : '#000000'}
-          emissiveIntensity={isSelected ? 0.2 : 0}
+          opacity={isSelected ? 0.9 : 0.7}
+          emissive={getFeatureColor()}
+          emissiveIntensity={isSelected ? 0.3 : 0.1}
+          wireframe={false}
         />
+        {/* Add wireframe outline for better visibility */}
+        <mesh>
+          <primitive object={getFeatureGeometry()} />
+          <meshBasicMaterial
+            color={getFeatureColor()}
+            wireframe={true}
+            transparent
+            opacity={0.5}
+          />
+        </mesh>
       </mesh>
     );
   };
