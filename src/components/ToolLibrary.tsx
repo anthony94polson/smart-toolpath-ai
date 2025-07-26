@@ -36,6 +36,7 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
   const [toolAssignments, setToolAssignments] = useState<Record<string, string>>({});
 
   const tools: Tool[] = [
+    // End Mills for pockets and slots
     {
       id: "EM_12_4F",
       name: "12mm 4-Flute End Mill",
@@ -52,7 +53,7 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
       partNumber: "R216.42-12030-AK26N",
       cost: 89.50,
       inStock: true,
-      compatibility: ["pocket", "slot"]
+      compatibility: ["pocket", "slot", "step"]
     },
     {
       id: "EM_8_3F", 
@@ -70,8 +71,82 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
       partNumber: "B051A080075M06",
       cost: 67.25,
       inStock: true,
+      compatibility: ["pocket", "slot", "step"]
+    },
+    {
+      id: "EM_6_2F",
+      name: "6mm 2-Flute End Mill",
+      type: "end_mill",
+      diameter: 6,
+      length: 45,
+      flutes: 2,
+      material: "Carbide",
+      coating: "AlCrN",
+      maxRPM: 6000,
+      feedRate: 720,
+      stepdown: 1.5,
+      manufacturer: "OSG",
+      partNumber: "FX-MG-EML-6",
+      cost: 45.80,
+      inStock: true,
+      compatibility: ["pocket", "slot", "step"]
+    },
+    {
+      id: "EM_16_4F",
+      name: "16mm 4-Flute End Mill",
+      type: "end_mill",
+      diameter: 16,
+      length: 100,
+      flutes: 4,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 2500,
+      feedRate: 1600,
+      stepdown: 4,
+      manufacturer: "Mitsubishi",
+      partNumber: "VF4MBR1600S32",
+      cost: 125.90,
+      inStock: true,
+      compatibility: ["pocket", "slot", "step"]
+    },
+    {
+      id: "EM_4_2F",
+      name: "4mm 2-Flute End Mill",
+      type: "end_mill",
+      diameter: 4,
+      length: 30,
+      flutes: 2,
+      material: "Carbide",
+      coating: "DLC",
+      maxRPM: 8000,
+      feedRate: 480,
+      stepdown: 1,
+      manufacturer: "Harvey Tool",
+      partNumber: "50364-C2",
+      cost: 38.75,
+      inStock: true,
       compatibility: ["pocket", "slot"]
     },
+    {
+      id: "EM_10_3F",
+      name: "10mm 3-Flute End Mill",
+      type: "end_mill",
+      diameter: 10,
+      length: 70,
+      flutes: 3,
+      material: "Carbide",
+      coating: "TiCN",
+      maxRPM: 3800,
+      feedRate: 1140,
+      stepdown: 2.5,
+      manufacturer: "Guhring",
+      partNumber: "5512-10.000",
+      cost: 72.40,
+      inStock: true,
+      compatibility: ["pocket", "slot", "step"]
+    },
+
+    // Drills for holes
     {
       id: "DR_6_HSS",
       name: "6mm HSS Drill",
@@ -109,6 +184,80 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
       compatibility: ["hole"]
     },
     {
+      id: "DR_4_HSS",
+      name: "4mm HSS Drill",
+      type: "drill",
+      diameter: 4,
+      length: 75,
+      flutes: 2,
+      material: "HSS",
+      coating: "TiN",
+      maxRPM: 3000,
+      feedRate: 120,
+      stepdown: 4,
+      manufacturer: "Dormer",
+      partNumber: "A002-4.0",
+      cost: 18.50,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+    {
+      id: "DR_10_CARB",
+      name: "10mm Carbide Drill",
+      type: "drill",
+      diameter: 10,
+      length: 140,
+      flutes: 2,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 2800,
+      feedRate: 420,
+      stepdown: 10,
+      manufacturer: "Walter",
+      partNumber: "DC160-10.000",
+      cost: 62.30,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+    {
+      id: "DR_12_HSS",
+      name: "12mm HSS Drill",
+      type: "drill",
+      diameter: 12,
+      length: 150,
+      flutes: 2,
+      material: "HSS",
+      coating: "TiCN",
+      maxRPM: 2000,
+      feedRate: 480,
+      stepdown: 12,
+      manufacturer: "Kennametal",
+      partNumber: "B041A120150M06",
+      cost: 35.80,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+    {
+      id: "DR_5_CARB",
+      name: "5mm Carbide Drill",
+      type: "drill",
+      diameter: 5,
+      length: 85,
+      flutes: 2,
+      material: "Carbide",
+      coating: "DLC",
+      maxRPM: 4000,
+      feedRate: 200,
+      stepdown: 5,
+      manufacturer: "Sandvik",
+      partNumber: "R840-0500-30-A1A",
+      cost: 32.90,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+
+    // Chamfer Mills
+    {
       id: "CM_45_6",
       name: "45° Chamfer Mill 6mm",
       type: "chamfer",
@@ -125,6 +274,174 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
       cost: 156.80,
       inStock: true,
       compatibility: ["chamfer"]
+    },
+    {
+      id: "CM_45_8",
+      name: "45° Chamfer Mill 8mm",
+      type: "chamfer",
+      diameter: 8,
+      length: 60,
+      flutes: 6,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 4000,
+      feedRate: 640,
+      stepdown: 1.5,
+      manufacturer: "OSG",
+      partNumber: "EX-CMF-8.0-45",
+      cost: 89.60,
+      inStock: true,
+      compatibility: ["chamfer"]
+    },
+    {
+      id: "CM_60_6",
+      name: "60° Chamfer Mill 6mm",
+      type: "chamfer",
+      diameter: 6,
+      length: 50,
+      flutes: 4,
+      material: "Carbide",
+      coating: "AlCrN",
+      maxRPM: 4500,
+      feedRate: 450,
+      stepdown: 1,
+      manufacturer: "Mitsubishi",
+      partNumber: "VCMT-6-60",
+      cost: 78.40,
+      inStock: true,
+      compatibility: ["chamfer"]
+    },
+    {
+      id: "CM_45_10",
+      name: "45° Chamfer Mill 10mm",
+      type: "chamfer",
+      diameter: 10,
+      length: 70,
+      flutes: 8,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 3500,
+      feedRate: 700,
+      stepdown: 2,
+      manufacturer: "Kennametal",
+      partNumber: "B051C100045M06",
+      cost: 134.50,
+      inStock: false,
+      compatibility: ["chamfer"]
+    },
+
+    // Specialized Tools for Steps
+    {
+      id: "ST_12_FACE",
+      name: "12mm Face Mill",
+      type: "end_mill",
+      diameter: 12,
+      length: 80,
+      flutes: 4,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 3000,
+      feedRate: 1200,
+      stepdown: 3,
+      manufacturer: "Sandvik",
+      partNumber: "R245-12T3-M",
+      cost: 98.70,
+      inStock: true,
+      compatibility: ["step", "pocket"]
+    },
+    {
+      id: "ST_8_BULL",
+      name: "8mm Bull Nose End Mill",
+      type: "end_mill",
+      diameter: 8,
+      length: 65,
+      flutes: 4,
+      material: "Carbide",
+      coating: "AlCrN",
+      maxRPM: 4000,
+      feedRate: 800,
+      stepdown: 2,
+      manufacturer: "Harvey Tool",
+      partNumber: "25688-C4",
+      cost: 87.20,
+      inStock: true,
+      compatibility: ["step", "pocket", "slot"]
+    },
+
+    // Reamers for precision holes
+    {
+      id: "RM_6_HSS",
+      name: "6mm HSS Reamer",
+      type: "reamer",
+      diameter: 6,
+      length: 90,
+      flutes: 6,
+      material: "HSS",
+      coating: "TiN",
+      maxRPM: 800,
+      feedRate: 160,
+      stepdown: 6,
+      manufacturer: "Guhring",
+      partNumber: "9005-6.000",
+      cost: 67.80,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+    {
+      id: "RM_8_CARB",
+      name: "8mm Carbide Reamer",
+      type: "reamer",
+      diameter: 8,
+      length: 100,
+      flutes: 6,
+      material: "Carbide",
+      coating: "TiAlN",
+      maxRPM: 1200,
+      feedRate: 240,
+      stepdown: 8,
+      manufacturer: "Walter",
+      partNumber: "B3011.UF08.080.Z06.72",
+      cost: 156.90,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+
+    // Taps for threaded holes
+    {
+      id: "TP_M6_HSS",
+      name: "M6x1.0 HSS Tap",
+      type: "tap",
+      diameter: 6,
+      length: 70,
+      flutes: 3,
+      material: "HSS",
+      coating: "TiN",
+      maxRPM: 500,
+      feedRate: 500,
+      stepdown: 6,
+      manufacturer: "OSG",
+      partNumber: "EX-SFT-M6x1.0",
+      cost: 24.60,
+      inStock: true,
+      compatibility: ["hole"]
+    },
+    {
+      id: "TP_M8_HSS",
+      name: "M8x1.25 HSS Tap",
+      type: "tap",
+      diameter: 8,
+      length: 80,
+      flutes: 3,
+      material: "HSS",
+      coating: "TiCN",
+      maxRPM: 400,
+      feedRate: 500,
+      stepdown: 8,
+      manufacturer: "Guhring",
+      partNumber: "251-M8x1.25",
+      cost: 31.40,
+      inStock: true,
+      compatibility: ["hole"]
     }
   ];
 
@@ -373,10 +690,11 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
             </div>
 
             <Tabs value={selectedCategory} onValueChange={setSelectedCategory}>
-              <TabsList className="grid grid-cols-3 w-full">
+              <TabsList className="grid grid-cols-4 w-full">
                 <TabsTrigger value="all">All Tools</TabsTrigger>
                 <TabsTrigger value="end_mill">End Mills</TabsTrigger>
                 <TabsTrigger value="drill">Drills</TabsTrigger>
+                <TabsTrigger value="chamfer">Chamfer</TabsTrigger>
               </TabsList>
 
               <TabsContent value={selectedCategory} className="space-y-2 max-h-96 overflow-y-auto">
