@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import * as THREE from 'three';
-import { StepByStepSimulation } from './StepByStepSimulation';
+import { MaterialRemovalSimulation } from './MaterialRemovalSimulation';
 import { ProductionToolpathGenerator, FeatureGeometry } from './ProductionToolpathGenerator';
 import { AdvancedFeature } from './AdvancedFeatureAnalyzer';
 import { 
@@ -325,10 +325,10 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                 </div>
 
                 <div className="h-[600px]">
-                  <StepByStepSimulation 
+                  <MaterialRemovalSimulation 
                     operations={operations.map(op => op._productionData).filter(Boolean)}
                     originalGeometry={originalGeometry}
-                    onComplete={() => {
+                    onSimulationComplete={() => {
                       const totalFeatures = toolAssignments.length;
                       const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
                       const estimatedTime = operations.reduce((sum, op) => {

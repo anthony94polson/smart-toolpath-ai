@@ -23,7 +23,7 @@ interface MaterialRemovalSimulationProps {
   onSimulationComplete?: () => void;
 }
 
-// Tool component that shows the cutting tool moving along the path
+// Enhanced tool component with realistic models
 const CuttingTool: React.FC<{ 
   operation: Operation; 
   progress: number; 
@@ -38,202 +38,171 @@ const CuttingTool: React.FC<{
     const currentPoint = operation.toolpath[pathIndex];
     const nextPoint = operation.toolpath[Math.min(pathIndex + 1, operation.toolpath.length - 1)];
     
-    // Position the tool
-    toolRef.current.position.copy(currentPoint);
+    // Position the tool (convert mm to m)
+    const scaledPoint = currentPoint.clone().multiplyScalar(0.001);
+    toolRef.current.position.copy(scaledPoint);
     
     // Orient the tool towards the next point
-    const direction = new THREE.Vector3().subVectors(nextPoint, currentPoint).normalize();
-    toolRef.current.lookAt(currentPoint.clone().add(direction));
+    const scaledNext = nextPoint.clone().multiplyScalar(0.001);
+    const direction = new THREE.Vector3().subVectors(scaledNext, scaledPoint).normalize();
+    if (direction.length() > 0) {
+      toolRef.current.lookAt(scaledPoint.clone().add(direction));
+    }
     
     // Rotate the tool to simulate spinning
-    toolRef.current.rotation.z += 0.2;
+    toolRef.current.rotation.z += 0.3;
   });
 
-  const toolGeometry = useMemo(() => {
+  const { toolGeometry, toolMaterial } = useMemo(() => {
+    const toolDiameter = (operation.tool?.diameter || 10) / 1000; // Convert mm to m
+    const toolLength = (operation.tool?.length || 50) / 1000;
+    
+    let geometry, material;
+    
     switch (operation.type) {
       case 'drilling':
-        return <cylinderGeometry args={[0.01, 0.02, 0.1, 8]} />;
+        geometry = <coneGeometry args={[toolDiameter/2, toolLength, 8]} />;
+        material = <meshStandardMaterial color="#ffd700" metalness={0.9} roughness={0.1} />;
+        break;
       case 'chamfering':
-        return <coneGeometry args={[0.02, 0.08, 6]} />;
-      default:
-        return <boxGeometry args={[0.02, 0.02, 0.1]} />;
+        geometry = <coneGeometry args={[toolDiameter/2, toolLength, 6]} />;
+        material = <meshStandardMaterial color="#ff6b35" metalness={0.8} roughness={0.2} />;
+        break;
+      case 'finishing':
+        geometry = <cylinderGeometry args={[toolDiameter/2, toolDiameter/2, toolLength, 12]} />;
+        material = <meshStandardMaterial color="#3498db" metalness={0.8} roughness={0.2} />;
+        break;
+      default: // roughing
+        geometry = <cylinderGeometry args={[toolDiameter/2, toolDiameter/2, toolLength, 8]} />;
+        material = <meshStandardMaterial color="#e74c3c" metalness={0.8} roughness={0.2} />;
     }
-  }, [operation.type]);
-
-  const toolColor = useMemo(() => {
-    switch (operation.type) {
-      case 'roughing': return '#ef4444';
-      case 'finishing': return '#3b82f6';
-      case 'drilling': return '#10b981';
-      case 'chamfering': return '#f59e0b';
-      default: return '#6b7280';
-    }
-  }, [operation.type]);
+    
+    return { toolGeometry: geometry, toolMaterial: material };
+  }, [operation.type, operation.tool]);
 
   if (!isActive) return null;
 
   return (
     <group ref={toolRef}>
-      {toolGeometry}
-      <meshStandardMaterial color={toolColor} metalness={0.8} roughness={0.2} />
+      <mesh>
+        {toolGeometry}
+        {toolMaterial}
+      </mesh>
+      {/* Tool holder */}
+      <mesh position={[0, 0, (operation.tool?.length || 50) / 2000]}>
+        <cylinderGeometry args={[(operation.tool?.diameter || 10) / 1500, (operation.tool?.diameter || 10) / 1500, 0.02, 8]} />
+        <meshStandardMaterial color="#2c3e50" metalness={0.9} roughness={0.1} />
+      </mesh>
     </group>
   );
 };
 
-// Workpiece component that shows progressive material removal
-const Workpiece: React.FC<{ 
-  originalGeometry?: THREE.BufferGeometry; 
-  removalProgress: number;
-  currentOperation?: Operation;
-}> = ({ originalGeometry, removalProgress, currentOperation }) => {
-  const workpieceRef = useRef<THREE.Mesh>(null);
+// Stock material component that shows progressive removal to reveal final part
+const StockMaterial: React.FC<{ 
+  stockGeometry?: THREE.BufferGeometry; 
+  operations: Operation[];
+  currentOperationIndex: number;
+  operationProgress: number;
+}> = ({ stockGeometry, operations, currentOperationIndex, operationProgress }) => {
+  const stockRef = useRef<THREE.Mesh>(null);
   const [currentGeometry, setCurrentGeometry] = useState<THREE.BufferGeometry | null>(null);
-  const [baseGeometry, setBaseGeometry] = useState<THREE.BufferGeometry | null>(null);
 
   useEffect(() => {
-    if (originalGeometry) {
-      const clonedGeometry = originalGeometry.clone();
-      setBaseGeometry(clonedGeometry);
-      setCurrentGeometry(clonedGeometry.clone());
-    }
-  }, [originalGeometry]);
+    if (!stockGeometry) return;
 
-  useEffect(() => {
-    if (!baseGeometry || !currentOperation) return;
-
-    // Create realistic material removal based on operation type
-    const newGeometry = baseGeometry.clone();
+    // Start with full stock geometry
+    const newGeometry = stockGeometry.clone();
     const positions = newGeometry.attributes.position.array as Float32Array;
-    const feature = currentOperation.feature;
     
-    // Convert feature position from mm to meters (Three.js units)
-    const featurePos = new THREE.Vector3(
-      feature.position.x / 1000,
-      feature.position.y / 1000, 
-      feature.position.z / 1000
-    );
-    
-    for (let i = 0; i < positions.length; i += 3) {
-      const x = positions[i];
-      const y = positions[i + 1];
-      const z = positions[i + 2];
+    // Apply progressive material removal for all completed operations
+    for (let opIndex = 0; opIndex <= currentOperationIndex; opIndex++) {
+      const operation = operations[opIndex];
+      if (!operation) continue;
       
-      const vertex = new THREE.Vector3(x, y, z);
-      let shouldRemove = false;
+      // Calculate removal progress for this operation
+      const removalAmount = opIndex < currentOperationIndex ? 1.0 : operationProgress;
       
-      switch (feature.type) {
-        case 'hole':
-          const drillRadius = (feature.dimensions.diameter || 6) / 2000; // mm to m
-          const drillDepth = (feature.dimensions.depth || 10) / 1000;
-          const distanceFromAxis = Math.sqrt(
-            Math.pow(x - featurePos.x, 2) + 
-            Math.pow(y - featurePos.y, 2)
-          );
-          
-          shouldRemove = distanceFromAxis <= drillRadius && 
-                        z >= featurePos.z - drillDepth * removalProgress &&
-                        z <= featurePos.z;
-          break;
-          
-        case 'pocket':
-          const pocketWidth = (feature.dimensions.width || 20) / 2000;
-          const pocketLength = (feature.dimensions.length || 20) / 2000;
-          const pocketDepth = (feature.dimensions.depth || 5) / 1000;
-          
-          const withinPocketX = Math.abs(x - featurePos.x) <= pocketWidth / 2;
-          const withinPocketY = Math.abs(y - featurePos.y) <= pocketLength / 2;
-          const withinPocketZ = z >= featurePos.z - pocketDepth * removalProgress &&
-                                z <= featurePos.z;
-          
-          shouldRemove = withinPocketX && withinPocketY && withinPocketZ;
-          break;
-          
-        case 'slot':
-          const slotWidth = (feature.dimensions.width || 10) / 2000;
-          const slotLength = (feature.dimensions.length || 30) / 2000;
-          const slotDepth = (feature.dimensions.depth || 5) / 1000;
-          
-          const withinSlotX = Math.abs(x - featurePos.x) <= slotWidth / 2;
-          const withinSlotY = Math.abs(y - featurePos.y) <= slotLength / 2;
-          const withinSlotZ = z >= featurePos.z - slotDepth * removalProgress &&
-                             z <= featurePos.z;
-          
-          shouldRemove = withinSlotX && withinSlotY && withinSlotZ;
-          break;
-          
-        default:
-          // Generic material removal for other features
-          const toolRadius = (currentOperation.tool?.diameter || 10) / 2000;
-          const distance = vertex.distanceTo(featurePos);
-          shouldRemove = distance <= toolRadius && Math.random() < removalProgress;
-      }
-      
-      if (shouldRemove) {
-        // Move vertex below the work surface to simulate removal
-        positions[i + 2] = featurePos.z - 0.1;
-      }
+      // Apply material removal based on toolpath
+      operation.toolpath.forEach((toolPoint, pointIndex) => {
+        const toolPos = toolPoint.clone().multiplyScalar(0.001); // Convert mm to m
+        const toolRadius = (operation.tool?.diameter || 10) / 2000; // mm to m
+        const currentProgress = pointIndex / operation.toolpath.length;
+        
+        if (currentProgress <= removalAmount) {
+          // Remove material around this tool position
+          for (let i = 0; i < positions.length; i += 3) {
+            const x = positions[i];
+            const y = positions[i + 1];
+            const z = positions[i + 2];
+            
+            const vertex = new THREE.Vector3(x, y, z);
+            const distance = vertex.distanceTo(toolPos);
+            
+            if (distance <= toolRadius) {
+              // Move vertex out of view to simulate removal
+              positions[i + 2] = -1000;
+            }
+          }
+        }
+      });
     }
     
     newGeometry.attributes.position.needsUpdate = true;
     newGeometry.computeVertexNormals();
-    newGeometry.computeBoundingBox();
     
     setCurrentGeometry(newGeometry);
-  }, [removalProgress, currentOperation, baseGeometry]);
+  }, [stockGeometry, operations, currentOperationIndex, operationProgress]);
 
-  if (!currentGeometry) {
-    // Fallback geometry if no STL is loaded
+  if (!currentGeometry && !stockGeometry) {
+    // Default stock block
     return (
-      <mesh ref={workpieceRef}>
-        <boxGeometry args={[2, 1, 0.5]} />
+      <mesh ref={stockRef}>
+        <boxGeometry args={[0.08, 0.06, 0.04]} />
         <meshStandardMaterial 
-          color="hsl(var(--muted))" 
-          metalness={0.7} 
-          roughness={0.3} 
-          transparent
-          opacity={0.9}
+          color="#a0a0a0" 
+          metalness={0.3} 
+          roughness={0.8} 
         />
       </mesh>
     );
   }
 
   return (
-    <mesh ref={workpieceRef} geometry={currentGeometry}>
+    <mesh ref={stockRef} geometry={currentGeometry || stockGeometry}>
       <meshStandardMaterial 
-        color="hsl(var(--muted))"
-        metalness={0.7} 
-        roughness={0.3} 
-        transparent
-        opacity={0.9}
+        color="#a0a0a0"
+        metalness={0.3} 
+        roughness={0.8} 
       />
     </mesh>
   );
 };
 
-// Toolpath visualization component
+// Enhanced toolpath visualization with better rendering
 const ToolpathVisualization: React.FC<{ 
   operations: Operation[]; 
   currentOperationIndex: number;
   progress: number;
 }> = ({ operations, currentOperationIndex, progress }) => {
-  const pathRefs = useRef<THREE.Line[]>([]);
-
   return (
     <>
       {operations.map((operation, index) => {
         if (operation.toolpath.length === 0) return null;
 
-        const points = operation.toolpath;
+        // Convert toolpath points from mm to m
+        const points = operation.toolpath.map(point => point.clone().multiplyScalar(0.001));
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         
         const isCurrentOperation = index === currentOperationIndex;
         const isCompleted = index < currentOperationIndex;
         
         let color = '#6b7280'; // Default gray
-        let opacity = 0.3;
+        let opacity = 0.2;
+        let lineWidth = 1;
         
         if (isCompleted) {
-          opacity = 0.8;
+          opacity = 0.6;
+          lineWidth = 2;
           switch (operation.type) {
             case 'roughing': color = '#ef4444'; break;
             case 'finishing': color = '#3b82f6'; break;
@@ -242,6 +211,7 @@ const ToolpathVisualization: React.FC<{
           }
         } else if (isCurrentOperation) {
           opacity = 1.0;
+          lineWidth = 3;
           switch (operation.type) {
             case 'roughing': color = '#ef4444'; break;
             case 'finishing': color = '#3b82f6'; break;
@@ -251,11 +221,18 @@ const ToolpathVisualization: React.FC<{
         }
 
         return (
-          <primitive key={operation.id} object={new THREE.Line(geometry, new THREE.LineBasicMaterial({ 
-            color: color, 
-            transparent: true, 
-            opacity: opacity 
-          }))} />
+          <primitive 
+            key={operation.id} 
+            object={new THREE.Line(
+              geometry, 
+              new THREE.LineBasicMaterial({ 
+                color: color, 
+                transparent: true, 
+                opacity: opacity,
+                linewidth: lineWidth
+              })
+            )} 
+          />
         );
       })}
     </>
@@ -269,7 +246,8 @@ const SimulationScene: React.FC<{
   speed: number;
   onProgress: (progress: number, operationIndex: number) => void;
   originalGeometry?: THREE.BufferGeometry;
-}> = ({ operations, isPlaying, speed, onProgress, originalGeometry }) => {
+  stockGeometry?: THREE.BufferGeometry;
+}> = ({ operations, isPlaying, speed, onProgress, originalGeometry, stockGeometry }) => {
   const [globalProgress, setGlobalProgress] = useState(0);
   const [currentOperationIndex, setCurrentOperationIndex] = useState(0);
   const [operationProgress, setOperationProgress] = useState(0);
@@ -277,7 +255,7 @@ const SimulationScene: React.FC<{
   useFrame((state, delta) => {
     if (!isPlaying || operations.length === 0) return;
 
-    const progressDelta = (delta * speed) / operations[currentOperationIndex]?.duration || 1;
+    const progressDelta = (delta * speed) / (operations[currentOperationIndex]?.duration || 1);
     const newOperationProgress = operationProgress + progressDelta;
 
     if (newOperationProgress >= 1) {
@@ -301,32 +279,46 @@ const SimulationScene: React.FC<{
 
   return (
     <>
-      <PerspectiveCamera makeDefault position={[3, 3, 3]} />
+      <PerspectiveCamera makeDefault position={[0.15, 0.15, 0.15]} />
       <OrbitControls enablePan enableZoom enableRotate />
       
-      {/* Lighting */}
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[10, 10, 5]} intensity={0.8} castShadow />
-      <pointLight position={[-10, -10, -5]} intensity={0.3} />
+      {/* Enhanced lighting */}
+      <ambientLight intensity={0.3} />
+      <directionalLight position={[10, 10, 5]} intensity={0.7} castShadow />
+      <directionalLight position={[-5, 5, 5]} intensity={0.4} />
+      <pointLight position={[-10, -10, -5]} intensity={0.2} />
       
       {/* Environment */}
       <Environment preset="warehouse" />
       
-      {/* Workpiece with material removal */}
-      <Workpiece 
-        originalGeometry={originalGeometry}
-        removalProgress={operationProgress}
-        currentOperation={operations[currentOperationIndex]}
+      {/* Stock material with progressive removal */}
+      <StockMaterial 
+        stockGeometry={stockGeometry}
+        operations={operations}
+        currentOperationIndex={currentOperationIndex}
+        operationProgress={operationProgress}
       />
       
-      {/* Toolpath visualization */}
+      {/* Final part visualization (wireframe) */}
+      {originalGeometry && (
+        <mesh geometry={originalGeometry}>
+          <meshStandardMaterial 
+            color="hsl(var(--primary))" 
+            transparent 
+            opacity={0.3}
+            wireframe
+          />
+        </mesh>
+      )}
+      
+      {/* Enhanced toolpath visualization */}
       <ToolpathVisualization 
         operations={operations}
         currentOperationIndex={currentOperationIndex}
         progress={operationProgress}
       />
       
-      {/* Current cutting tool */}
+      {/* Current cutting tool with realistic model */}
       {operations[currentOperationIndex] && (
         <CuttingTool 
           operation={operations[currentOperationIndex]}
@@ -335,8 +327,9 @@ const SimulationScene: React.FC<{
         />
       )}
       
-      {/* Grid for reference */}
-      <gridHelper args={[10, 10]} />
+      {/* Reference grid */}
+      <gridHelper args={[0.2, 20]} />
+      <axesHelper args={[0.05]} />
     </>
   );
 };
@@ -350,15 +343,37 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
   const [speed, setSpeed] = useState([1]);
   const [progress, setProgress] = useState(0);
   const [currentOperationIndex, setCurrentOperationIndex] = useState(0);
+  const [stockGeometry, setStockGeometry] = useState<THREE.BufferGeometry | null>(null);
 
-  // Generate mock toolpaths for operations
+  // Generate stock from bounding box
+  useEffect(() => {
+    if (originalGeometry) {
+      originalGeometry.computeBoundingBox();
+      const box = originalGeometry.boundingBox!;
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      
+      // Add stock allowance (10% extra material)
+      const stockSize = size.clone().multiplyScalar(1.1);
+      const stockGeometry = new THREE.BoxGeometry(stockSize.x, stockSize.y, stockSize.z);
+      
+      // Position stock to contain the original geometry
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      stockGeometry.translate(center.x, center.y, center.z);
+      
+      setStockGeometry(stockGeometry);
+    }
+  }, [originalGeometry]);
+
+  // Generate realistic toolpaths based on actual geometry
   const operationsWithToolpaths = useMemo(() => {
     return operations.map(op => ({
       ...op,
-      toolpath: generateMockToolpath(op),
+      toolpath: generateRealisticToolpath(op, originalGeometry),
       duration: getDurationForOperation(op)
     }));
-  }, [operations]);
+  }, [operations, originalGeometry]);
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -382,7 +397,7 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
   return (
     <div className="w-full h-full flex flex-col">
       {/* 3D Canvas */}
-      <div className="flex-1 min-h-[400px] bg-gray-50 rounded-lg overflow-hidden">
+      <div className="flex-1 min-h-[500px] bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg overflow-hidden">
         <Canvas shadows>
           <SimulationScene 
             operations={operationsWithToolpaths}
@@ -390,6 +405,7 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
             speed={speed[0]}
             onProgress={handleProgress}
             originalGeometry={originalGeometry}
+            stockGeometry={stockGeometry}
           />
         </Canvas>
       </div>
@@ -424,7 +440,7 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
               <Slider
                 value={speed}
                 onValueChange={setSpeed}
-                max={3}
+                max={5}
                 min={0.1}
                 step={0.1}
                 className="w-full"
@@ -451,142 +467,209 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
               style={{ width: `${progress * 100}%` }}
             />
           </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Estimated Time: {operationsWithToolpaths.reduce((sum, op) => sum + op.duration, 0).toFixed(1)} min</span>
+            <span>Current Tool: {operationsWithToolpaths[currentOperationIndex]?.tool?.type || 'None'}</span>
+          </div>
         </div>
       </Card>
     </div>
   );
 };
 
-// Helper functions for realistic toolpath generation
-function generateMockToolpath(operation: any): THREE.Vector3[] {
+// Enhanced toolpath generation based on real geometry
+function generateRealisticToolpath(operation: any, originalGeometry?: THREE.BufferGeometry): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
   const feature = operation.feature;
   
-  // Convert positions from mm to meters for Three.js
-  const featurePos = new THREE.Vector3(
-    feature.position.x / 1000,
-    feature.position.y / 1000,
-    feature.position.z / 1000
+  if (!feature.boundaryVertices || feature.boundaryVertices.length === 0) {
+    return generateFallbackToolpath(operation);
+  }
+  
+  // Use actual feature geometry for toolpath generation
+  const featureCenter = new THREE.Vector3(
+    feature.position.x,
+    feature.position.y,
+    feature.position.z
   );
   
   switch (operation.type) {
     case 'roughing':
-      // Generate adaptive clearing pattern
-      const pocketWidth = (feature.dimensions.width || 20) / 2000;
-      const pocketLength = (feature.dimensions.length || 20) / 2000;
-      const stepover = (operation.tool?.diameter || 10) / 3000; // Conservative stepover
-      
-      for (let y = -pocketLength/2; y <= pocketLength/2; y += stepover) {
-        const direction = Math.floor((y + pocketLength/2) / stepover) % 2 === 0 ? 1 : -1;
-        const startX = direction > 0 ? -pocketWidth/2 : pocketWidth/2;
-        const endX = direction > 0 ? pocketWidth/2 : -pocketWidth/2;
+      // Adaptive clearing based on actual feature boundary
+      if (feature.type === 'pocket') {
+        const stepover = (operation.tool?.diameter || 10) * 0.7; // 70% stepover
+        const depth = feature.dimensions.depth || 5;
         
-        for (let x = startX; direction > 0 ? x <= endX : x >= endX; x += direction * stepover/2) {
-          points.push(new THREE.Vector3(
-            featurePos.x + x,
-            featurePos.y + y,
-            featurePos.z - 0.002 // 2mm cutting depth
-          ));
+        // Generate zigzag pattern within boundary
+        const bounds = calculateFeatureBounds(feature.boundaryVertices);
+        
+        for (let z = featureCenter.z; z >= featureCenter.z - depth; z -= 2) {
+          for (let y = bounds.min.y; y <= bounds.max.y; y += stepover) {
+            const direction = Math.floor((y - bounds.min.y) / stepover) % 2 === 0 ? 1 : -1;
+            const startX = direction > 0 ? bounds.min.x : bounds.max.x;
+            const endX = direction > 0 ? bounds.max.x : bounds.min.x;
+            
+            for (let x = startX; direction > 0 ? x <= endX : x >= endX; x += direction * stepover/3) {
+              if (isPointInFeature(new THREE.Vector3(x, y, z), feature)) {
+                points.push(new THREE.Vector3(x, y, z));
+              }
+            }
+          }
         }
       }
       break;
       
     case 'finishing':
-      // Generate contour finishing passes
-      const contourRadius = Math.min(
-        (feature.dimensions.width || 20) / 2000,
-        (feature.dimensions.length || 20) / 2000
-      ) * 0.9;
-      
-      for (let i = 0; i <= 100; i++) {
-        const angle = (i / 100) * Math.PI * 2;
-        points.push(new THREE.Vector3(
-          featurePos.x + Math.cos(angle) * contourRadius,
-          featurePos.y + Math.sin(angle) * contourRadius,
-          featurePos.z - 0.001
-        ));
+      // Contour finishing around feature boundary
+      if (feature.boundaryVertices) {
+        const finishAllowance = 0.5; // 0.5mm finish allowance
+        const offsetBoundary = offsetBoundary2D(feature.boundaryVertices, -finishAllowance);
+        
+        offsetBoundary.forEach(vertex => {
+          points.push(vertex.clone());
+        });
       }
       break;
       
     case 'drilling':
-      // Generate realistic drilling cycle
-      const drillDepth = (feature.dimensions.depth || 10) / 1000;
-      const peckDepth = 0.002; // 2mm pecks
-      
-      for (let depth = 0; depth <= drillDepth; depth += peckDepth) {
-        // Drill down
-        points.push(new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z - depth));
-        // Retract for chip clearing
-        if (depth < drillDepth) {
-          points.push(new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 0.002));
+      // Realistic drilling cycle
+      if (feature.type === 'hole') {
+        const depth = feature.dimensions.depth || 10;
+        const peckDepth = Math.min(depth / 3, 5); // Peck drilling
+        
+        // Rapid to start position
+        points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 5));
+        
+        // Drilling cycle with pecks
+        for (let currentDepth = 0; currentDepth < depth; currentDepth += peckDepth) {
+          const targetZ = featureCenter.z - Math.min(currentDepth + peckDepth, depth);
+          points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, targetZ));
+          
+          // Retract for chip removal
+          if (currentDepth + peckDepth < depth) {
+            points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 2));
+          }
         }
+        
+        // Final retract
+        points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 10));
       }
       break;
       
     case 'chamfering':
-      // Generate chamfer toolpath
-      const chamferSize = (feature.dimensions.size || 2) / 2000;
-      const perimeter = feature.dimensions.perimeter || 100;
-      
-      for (let i = 0; i <= perimeter; i++) {
-        const angle = (i / perimeter) * Math.PI * 2;
-        const radius = (Math.min(feature.dimensions.width, feature.dimensions.length) || 20) / 2000;
-        
-        points.push(new THREE.Vector3(
-          featurePos.x + Math.cos(angle) * radius,
-          featurePos.y + Math.sin(angle) * radius,
-          featurePos.z + chamferSize
-        ));
+      // Chamfer around edges
+      if (feature.boundaryVertices) {
+        feature.boundaryVertices.forEach(vertex => {
+          points.push(vertex.clone());
+        });
       }
       break;
+  }
+  
+  return points.length > 0 ? points : generateFallbackToolpath(operation);
+}
+
+function generateFallbackToolpath(operation: any): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const feature = operation.feature;
+  const featurePos = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  
+  // Simple fallback patterns
+  switch (operation.type) {
+    case 'drilling':
+      points.push(
+        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 5),
+        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z - (feature.dimensions.depth || 10)),
+        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 5)
+      );
+      break;
+    default:
+      // Simple rectangular pattern
+      const size = (feature.dimensions.width || 20) / 2;
+      for (let i = 0; i < 10; i++) {
+        const angle = (i / 10) * Math.PI * 2;
+        points.push(new THREE.Vector3(
+          featurePos.x + Math.cos(angle) * size,
+          featurePos.y + Math.sin(angle) * size,
+          featurePos.z - 2
+        ));
+      }
   }
   
   return points;
 }
 
 function getDurationForOperation(operation: any): number {
-  // Realistic machining time calculation
   const feature = operation.feature;
   const volume = calculateFeatureVolume(feature);
-  const mrr = 100; // 100 mm³/min for conservative estimate
   
-  // Base time from volume and MRR
-  let baseTime = volume / mrr * 60; // Convert to seconds
-  
-  // Add operation-specific factors
-  const operationFactors = {
-    'roughing': 2.5,    // Heavy material removal
-    'finishing': 1.8,   // Precision work
-    'drilling': 1.2,    // Standard drilling
-    'chamfering': 1.0   // Quick edge work
+  // Realistic material removal rates (mm³/min)
+  const materialRemovalRates = {
+    'roughing': 800,    // High removal rate
+    'finishing': 200,   // Lower removal rate for quality
+    'drilling': 300,    // Moderate rate
+    'chamfering': 150   // Slow for precision
   };
   
-  const factor = operationFactors[operation.type as keyof typeof operationFactors] || 1.5;
+  const rate = materialRemovalRates[operation.type] || 400;
+  const baseMachiningTime = volume / rate;
   
-  // Add setup and safety time
-  const setupTime = 45; // 45 seconds setup per operation
-  const safetyTime = 15; // 15 seconds for retracts and rapids
+  // Add realistic factors
+  const setupTime = 3; // 3 minutes setup per operation
+  const toolChangeTime = 1.5; // Tool change time
+  const safetyMargin = 1.8; // 80% extra time for safety
+  const rapidTraverseTime = 0.5; // Time for rapid moves
   
-  return baseTime * factor + setupTime + safetyTime;
+  return (baseMachiningTime + setupTime + toolChangeTime + rapidTraverseTime) * safetyMargin;
 }
 
 function calculateFeatureVolume(feature: any): number {
   switch (feature.type) {
+    case 'hole':
+      const radius = (feature.dimensions.diameter || 6) / 2;
+      const depth = feature.dimensions.depth || 10;
+      return Math.PI * radius * radius * depth;
     case 'pocket':
       return (feature.dimensions.width || 20) * 
              (feature.dimensions.length || 20) * 
              (feature.dimensions.depth || 5);
-    case 'hole':
-      const radius = (feature.dimensions.diameter || 6) / 2;
-      return Math.PI * radius * radius * (feature.dimensions.depth || 10);
     case 'slot':
       return (feature.dimensions.width || 10) * 
              (feature.dimensions.length || 30) * 
              (feature.dimensions.depth || 5);
-    case 'chamfer':
-      return Math.pow(feature.dimensions.size || 2, 2) * 
-             (feature.dimensions.perimeter || 100) / 4;
     default:
-      return 500; // mm³
+      return 1000; // Default volume
   }
+}
+
+// Helper functions for advanced toolpath generation
+function calculateFeatureBounds(vertices: THREE.Vector3[]) {
+  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+  
+  vertices.forEach(vertex => {
+    min.min(vertex);
+    max.max(vertex);
+  });
+  
+  return { min, max };
+}
+
+function isPointInFeature(point: THREE.Vector3, feature: any): boolean {
+  // Simple point-in-polygon test (2D projection)
+  const featureCenter = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  const distance = point.distanceTo(featureCenter);
+  const maxDistance = Math.max(feature.dimensions.width || 20, feature.dimensions.length || 20) / 2;
+  
+  return distance <= maxDistance;
+}
+
+function offsetBoundary2D(vertices: THREE.Vector3[], offset: number): THREE.Vector3[] {
+  // Simple offset implementation - in production, use proper offset algorithms
+  const center = vertices.reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(vertices.length);
+  
+  return vertices.map(vertex => {
+    const direction = new THREE.Vector3().subVectors(vertex, center).normalize();
+    return vertex.clone().add(direction.multiplyScalar(offset));
+  });
 }
