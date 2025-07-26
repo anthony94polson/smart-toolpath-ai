@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Eye, EyeOff, Settings, Target } from "lucide-react";
+  import { Eye, EyeOff, Settings, Target } from "lucide-react";
+  import { Checkbox } from "@/components/ui/checkbox";
 import Model3DViewer from "./Model3DViewer";
 
 interface Feature {
@@ -78,6 +79,25 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
     );
   };
 
+  const toggleSelectAll = () => {
+    if (selectedFeatures.length === features.length) {
+      setSelectedFeatures([]);
+    } else {
+      setSelectedFeatures(features.map(f => f.id));
+    }
+  };
+
+  const isAllSelected = selectedFeatures.length === features.length;
+  const isIndeterminate = selectedFeatures.length > 0 && selectedFeatures.length < features.length;
+  
+  const checkboxRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (checkboxRef.current) {
+      checkboxRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
   const toggleFeatureVisibility = (featureId: string) => {
     // In a real app, this would update the features state
     console.log(`Toggle visibility for feature ${featureId}`);
@@ -128,6 +148,17 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
           </TabsList>
           
           <TabsContent value="list" className="space-y-4">
+            <div className="flex items-center space-x-2 mb-4 p-3 bg-muted/50 rounded-lg">
+              <Checkbox
+                id="select-all"
+                checked={isAllSelected}
+                onCheckedChange={toggleSelectAll}
+                ref={checkboxRef}
+              />
+              <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
+                Select All Features ({features.length})
+              </label>
+            </div>
             {Object.entries(featuresByType).map(([type, typeFeatures]) => (
               <div key={type} className="space-y-2">
                 <h3 className="font-semibold capitalize text-lg">{type}s</h3>
