@@ -14,12 +14,13 @@ const Workspace = () => {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>("upload");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [analysisResults, setAnalysisResults] = useState<any>(null);
+  const [analyzedFeatures, setAnalyzedFeatures] = useState<any[]>([]);
   const [selectedFeatures, setSelectedFeatures] = useState<any[]>([]);
   const [toolAssignments, setToolAssignments] = useState<any[]>([]);
   const [simulationResults, setSimulationResults] = useState<any>(null);
 
   const steps: { key: WorkflowStep; label: string; description: string }[] = [
-    { key: "upload", label: "Upload", description: "Load STEP file" },
+    { key: "upload", label: "Upload", description: "Load STL file" },
     { key: "features", label: "Features", description: "AI detection" },
     { key: "tools", label: "Tools", description: "Assignment" },
     { key: "toolpaths", label: "Toolpaths", description: "Generation" },
@@ -29,9 +30,12 @@ const Workspace = () => {
   const currentStepIndex = steps.findIndex(step => step.key === currentStep);
   const progressPercentage = ((currentStepIndex + 1) / steps.length) * 100;
 
-  const handleFileUploaded = (file: File, results: any) => {
+  const handleFileUploaded = (file: File, results: any, features?: any[]) => {
     setUploadedFile(file);
     setAnalysisResults(results);
+    if (features) {
+      setAnalyzedFeatures(features);
+    }
     setCurrentStep("features");
   };
 
@@ -59,6 +63,7 @@ const Workspace = () => {
     setCurrentStep("upload");
     setUploadedFile(null);
     setAnalysisResults(null);
+    setAnalyzedFeatures([]);
     setSelectedFeatures([]);
     setToolAssignments([]);
     setSimulationResults(null);
@@ -122,6 +127,7 @@ const Workspace = () => {
               analysisResults={analysisResults}
               onFeaturesSelected={handleFeaturesSelected}
               uploadedFile={uploadedFile}
+              analyzedFeatures={analyzedFeatures}
             />
           )}
           

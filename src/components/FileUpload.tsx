@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import STLLoaderComponent from "./STLLoader";
+import * as THREE from 'three';
 
 interface FileUploadProps {
-  onFileUploaded: (file: File, analysisResults: any) => void;
+  onFileUploaded: (file: File, analysisResults: any, features?: any[]) => void;
 }
 
 const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
@@ -14,6 +16,8 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [analyzedFeatures, setAnalyzedFeatures] = useState<any[] | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<any | null>(null);
   const { toast } = useToast();
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -21,18 +25,16 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     setIsDragging(false);
     
     const files = Array.from(e.dataTransfer.files);
-    const stepFile = files.find(file => 
-      file.name.toLowerCase().endsWith('.step') || 
-      file.name.toLowerCase().endsWith('.stp') ||
+    const stlFile = files.find(file => 
       file.name.toLowerCase().endsWith('.stl')
     );
     
-    if (stepFile) {
-      processFile(stepFile);
+    if (stlFile) {
+      processFile(stlFile);
     } else {
       toast({
         title: "Invalid file type",
-        description: "Please upload a STEP (.step/.stp) or STL (.stl) file",
+        description: "Please upload an STL (.stl) file",
         variant: "destructive"
       });
     }
@@ -49,68 +51,20 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     setUploadedFile(file);
     setIsProcessing(true);
     setUploadProgress(0);
+    setAnalyzedFeatures(null);
+    setAnalysisResults(null);
 
     try {
       // Validate file type
-      if (!file.name.toLowerCase().endsWith('.step') && 
-          !file.name.toLowerCase().endsWith('.stp') && 
-          !file.name.toLowerCase().endsWith('.stl')) {
-        throw new Error('Invalid file type. Please upload a STEP (.step/.stp) or STL (.stl) file.');
+      if (!file.name.toLowerCase().endsWith('.stl')) {
+        throw new Error('Invalid file type. Please upload an STL (.stl) file.');
       }
 
-      // Realistic file processing simulation
-      const stages = [
-        { progress: 15, delay: 600 },
-        { progress: 35, delay: 800 },
-        { progress: 55, delay: 1000 },
-        { progress: 75, delay: 800 },
-        { progress: 90, delay: 600 },
-        { progress: 100, delay: 400 }
-      ];
-
-      for (const stage of stages) {
-        await new Promise(resolve => setTimeout(resolve, stage.delay));
-        setUploadProgress(stage.progress);
-      }
-
-      // Generate realistic analysis results
-      const fileSize = file.size / (1024 * 1024); // MB
-      const complexity = fileSize > 10 ? "High" : fileSize > 5 ? "Medium" : "Low";
+      // Start with basic file loading progress
+      setUploadProgress(25);
       
-      const mockResults = {
-        fileName: file.name,
-        fileSize: file.size,
-        features: {
-          pocket: Math.floor(Math.random() * 3 + 2),
-          hole: Math.floor(Math.random() * 6 + 3),
-          slot: Math.floor(Math.random() * 3 + 1),
-          chamfer: Math.floor(Math.random() * 5 + 2),
-          step: Math.floor(Math.random() * 3 + 1)
-        },
-        geometry: {
-          boundingBox: { 
-            x: (Math.random() * 50 + 80).toFixed(1), 
-            y: (Math.random() * 30 + 50).toFixed(1), 
-            z: (Math.random() * 20 + 15).toFixed(1) 
-          },
-          volume: (fileSize * 20 + Math.random() * 100).toFixed(1),
-          surfaceArea: (fileSize * 50 + Math.random() * 200).toFixed(1)
-        },
-        materials: ["Aluminum 6061-T6", "Steel 1018", "Stainless 316L"][Math.floor(Math.random() * 3)],
-        complexity,
-        confidence: (0.85 + Math.random() * 0.1).toFixed(2),
-        estimatedTime: (fileSize * 15 + Math.random() * 30 + 20).toFixed(0) + " minutes",
-        timestamp: new Date().toISOString()
-      };
-
-      setIsProcessing(false);
-      onFileUploaded(file, mockResults);
-      
-      const totalFeatures = Object.values(mockResults.features).reduce((a, b) => Number(a) + Number(b), 0);
-      toast({
-        title: "Analysis Complete",
-        description: `Successfully processed ${file.name} with ${totalFeatures} features detected.`,
-      });
+      // The actual STL loading and analysis will happen in the STLLoaderComponent
+      // We'll wait for the analysis to complete via callbacks
 
     } catch (error: any) {
       console.error('File processing failed:', error);
@@ -125,12 +79,46 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     }
   };
 
+  const handleGeometryLoaded = (geometry: THREE.BufferGeometry) => {
+    console.log('FileUpload: STL geometry loaded');
+    setUploadProgress(75);
+  };
+
+  const handleFeaturesAnalyzed = (features: any[], results: any) => {
+    console.log('FileUpload: Features analyzed:', features.length);
+    setAnalyzedFeatures(features);
+    setAnalysisResults(results);
+    setUploadProgress(100);
+    setIsProcessing(false);
+    
+    // Call the parent callback with the real analysis results
+    onFileUploaded(uploadedFile!, results, features);
+    
+    const totalFeatures = Object.values(results.features).reduce((a: any, b: any) => Number(a) + Number(b), 0);
+    toast({
+      title: "Analysis Complete",
+      description: `Successfully processed ${uploadedFile?.name} with ${totalFeatures} features detected.`,
+    });
+  };
+
+  const handleAnalysisError = (error: string) => {
+    console.error('FileUpload: Analysis error:', error);
+    toast({
+      title: "Analysis Failed",
+      description: error,
+      variant: "destructive",
+    });
+    setIsProcessing(false);
+    setUploadedFile(null);
+    setUploadProgress(0);
+  };
+
   return (
     <Card className="p-8">
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold mb-2">Upload 3D File</h2>
+        <h2 className="text-2xl font-bold mb-2">Upload STL File</h2>
         <p className="text-muted-foreground">
-          Drag and drop your STEP or STL file or click to browse
+          Drag and drop your STL file or click to browse
         </p>
       </div>
 
@@ -151,7 +139,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
             Drop your 3D file here
           </p>
           <p className="text-muted-foreground mb-4">
-            Supports .step, .stp, and .stl files up to 100MB
+            Supports .stl files up to 100MB
           </p>
           <Button onClick={() => document.getElementById('file-input')?.click()}>
             Browse Files
@@ -159,7 +147,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
           <input
             id="file-input"
             type="file"
-            accept=".step,.stp,.stl"
+            accept=".stl"
             onChange={handleFileInput}
             className="hidden"
           />
@@ -200,11 +188,23 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
               setUploadedFile(null);
               setUploadProgress(0);
               setIsProcessing(false);
+              setAnalyzedFeatures(null);
+              setAnalysisResults(null);
             }}
             className="w-full"
           >
             Upload Different File
           </Button>
+          
+          {/* STL Loader Component */}
+          {uploadedFile && uploadedFile.name.toLowerCase().endsWith('.stl') && (
+            <STLLoaderComponent
+              file={uploadedFile}
+              onGeometryLoaded={handleGeometryLoaded}
+              onError={handleAnalysisError}
+              onFeaturesAnalyzed={handleFeaturesAnalyzed}
+            />
+          )}
         </div>
       )}
     </Card>

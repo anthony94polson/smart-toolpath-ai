@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { STLLoader } from 'three-stdlib';
 import * as THREE from 'three';
+import { STLFeatureAnalyzer } from './STLFeatureAnalyzer';
 
 interface STLLoaderProps {
   file: File;
   onGeometryLoaded: (geometry: THREE.BufferGeometry) => void;
   onError: (error: string) => void;
+  onFeaturesAnalyzed?: (features: any[], analysisResults: any) => void;
 }
 
-const STLLoaderComponent = ({ file, onGeometryLoaded, onError }: STLLoaderProps) => {
+const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyzed }: STLLoaderProps) => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -39,6 +41,25 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError }: STLLoaderProps)
             
             // Compute normals for proper lighting
             geometry.computeVertexNormals();
+            
+            // Analyze features using the loaded geometry
+            if (onFeaturesAnalyzed) {
+              console.log('STLLoader: Starting feature analysis...');
+              try {
+                const analyzer = new STLFeatureAnalyzer(geometry);
+                const { features, analysisResults } = analyzer.analyzeFeatures();
+                
+                // Update analysis results with actual file info
+                analysisResults.fileName = file.name;
+                analysisResults.fileSize = file.size;
+                
+                console.log('STLLoader: Feature analysis complete:', features.length, 'features found');
+                onFeaturesAnalyzed(features, analysisResults);
+              } catch (error) {
+                console.error('STLLoader: Feature analysis failed:', error);
+                // Continue with geometry loading even if analysis fails
+              }
+            }
             
             onGeometryLoaded(geometry);
             

@@ -20,10 +20,12 @@ interface FeatureDetectionProps {
   analysisResults: any;
   onFeaturesSelected: (features: Feature[]) => void;
   uploadedFile?: File;
+  analyzedFeatures?: Feature[];
 }
 
-const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile }: FeatureDetectionProps) => {
-  const [features] = useState<Feature[]>([
+const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, analyzedFeatures }: FeatureDetectionProps) => {
+  // Use analyzed features if available, otherwise fallback to mock data
+  const [features] = useState<Feature[]>(analyzedFeatures || [
     {
       id: "P001",
       type: "pocket",
@@ -34,48 +36,12 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile }:
       visible: true
     },
     {
-      id: "P002", 
-      type: "pocket",
-      dimensions: { width: 15, length: 30, depth: 5 },
-      position: { x: 80, y: 45, z: 0 },
-      confidence: 0.89,
-      toolRecommendation: "8mm End Mill",
-      visible: true
-    },
-    {
       id: "H001",
       type: "hole",
       dimensions: { diameter: 6, depth: 20 },
       position: { x: 25, y: 25, z: 0 },
       confidence: 0.98,
       toolRecommendation: "6mm Drill",
-      visible: true
-    },
-    {
-      id: "H002",
-      type: "hole", 
-      dimensions: { diameter: 8, depth: 15 },
-      position: { x: 100, y: 20, z: 0 },
-      confidence: 0.92,
-      toolRecommendation: "8mm Drill",
-      visible: true
-    },
-    {
-      id: "S001",
-      type: "slot",
-      dimensions: { width: 6, length: 20, depth: 10 },
-      position: { x: 60, y: 60, z: 0 },
-      confidence: 0.87,
-      toolRecommendation: "6mm End Mill",
-      visible: true
-    },
-    {
-      id: "C001",
-      type: "chamfer",
-      dimensions: { size: 2, angle: 45 },
-      position: { x: 30, y: 50, z: 20 },
-      confidence: 0.94,
-      toolRecommendation: "45° Chamfer Mill",
       visible: true
     }
   ]);
