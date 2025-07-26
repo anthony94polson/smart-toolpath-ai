@@ -2,9 +2,7 @@ import { useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, CheckCircle, AlertCircle, Zap, Download } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface FileUploadProps {
@@ -16,8 +14,6 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState<string>('');
-  const [isConverting, setIsConverting] = useState(false);
   const { toast } = useToast();
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -49,73 +45,8 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     }
   };
 
-  const convertStepToStl = async (file: File) => {
-    if (!webhookUrl) {
-      toast({
-        title: "Webhook Required",
-        description: "Please enter your Zapier webhook URL for STEP conversion",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsConverting(true);
-    console.log("Triggering STEP→STL conversion webhook:", webhookUrl);
-
-    try {
-      // Convert file to base64 for webhook transmission
-      const base64File = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        mode: "no-cors",
-        body: JSON.stringify({
-          fileName: file.name,
-          fileSize: file.size,
-          fileData: base64File,
-          conversionType: "step-to-stl",
-          timestamp: new Date().toISOString(),
-          triggered_from: window.location.origin,
-        }),
-      });
-
-      toast({
-        title: "Conversion Started",
-        description: "STEP→STL conversion initiated via Zapier. Check your Zap for the converted STL file.",
-      });
-
-    } catch (error) {
-      console.error("Error triggering conversion webhook:", error);
-      toast({
-        title: "Conversion Failed",
-        description: "Failed to trigger STEP→STL conversion. Please check the webhook URL.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsConverting(false);
-    }
-  };
-
   const processFile = async (file: File) => {
     setUploadedFile(file);
-    
-    // If it's a STEP file and webhook is configured, offer conversion
-    const isStepFile = file.name.toLowerCase().endsWith('.step') || file.name.toLowerCase().endsWith('.stp');
-    if (isStepFile && webhookUrl) {
-      toast({
-        title: "STEP File Detected",
-        description: "Would you like to convert this to STL for real 3D viewing?",
-      });
-    }
-    
     setIsProcessing(true);
     setUploadProgress(0);
 
@@ -149,7 +80,6 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
       const mockResults = {
         fileName: file.name,
         fileSize: file.size,
-        fileType: isStepFile ? 'STEP' : 'STL',
         features: {
           pocket: Math.floor(Math.random() * 3 + 2),
           hole: Math.floor(Math.random() * 6 + 3),
@@ -196,38 +126,13 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Zapier Webhook Configuration */}
-      <Card className="p-6 bg-gradient-to-r from-primary/5 to-accent/5">
-        <div className="flex items-center space-x-3 mb-4">
-          <Zap className="w-5 h-5 text-primary" />
-          <h3 className="text-lg font-semibold">STEP→STL Conversion Setup</h3>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Connect your Zapier webhook to automatically convert STEP files to STL for real 3D viewing.
+    <Card className="p-8">
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold mb-2">Upload 3D File</h2>
+        <p className="text-muted-foreground">
+          Drag and drop your STEP or STL file or click to browse
         </p>
-        <div className="space-y-2">
-          <Label htmlFor="webhook-url">Zapier Webhook URL</Label>
-          <Input
-            id="webhook-url"
-            type="url"
-            placeholder="https://hooks.zapier.com/hooks/catch/..."
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Create a Zap with a webhook trigger → CloudConvert/FreeCAD → return STL file
-          </p>
-        </div>
-      </Card>
-
-      <Card className="p-8">
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold mb-2">Upload 3D File</h2>
-          <p className="text-muted-foreground">
-            Drag and drop your STEP or STL file or click to browse
-          </p>
-        </div>
+      </div>
 
       {!uploadedFile ? (
         <div
@@ -289,39 +194,6 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
             </div>
           )}
 
-          {/* STEP Conversion Options */}
-          {uploadedFile && 
-           (uploadedFile.name.toLowerCase().endsWith('.step') || uploadedFile.name.toLowerCase().endsWith('.stp')) && 
-           !isProcessing && (
-            <div className="p-4 bg-warning/10 border border-warning/20 rounded-lg">
-              <div className="flex items-center space-x-2 mb-2">
-                <AlertCircle className="w-4 h-4 text-warning" />
-                <span className="text-sm font-medium">STEP File Detected</span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-3">
-                STEP files show mock geometry. Convert to STL for real 3D model display.
-              </p>
-              <Button 
-                onClick={() => convertStepToStl(uploadedFile)}
-                disabled={!webhookUrl || isConverting}
-                className="w-full"
-                variant="outline"
-              >
-                {isConverting ? (
-                  <>
-                    <AlertCircle className="w-4 h-4 mr-2 animate-spin" />
-                    Converting...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" />
-                    Convert to STL via Zapier
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
           <Button 
             variant="outline" 
             onClick={() => {
@@ -335,8 +207,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
           </Button>
         </div>
       )}
-      </Card>
-    </div>
+    </Card>
   );
 };
 
