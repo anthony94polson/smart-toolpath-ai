@@ -204,15 +204,6 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           {/* Environment */}
           <Environment preset="studio" />
           
-          {/* Grid */}
-          <Grid 
-            infiniteGrid={true}
-            cellSize={1.5}
-            sectionSize={3}
-            fadeDistance={150}
-            fadeStrength={1}
-          />
-          
           {/* Main part */}
           <mesh position={[0, 0, 0]}>
             <primitive object={partGeometry} />
