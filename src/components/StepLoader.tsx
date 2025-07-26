@@ -44,100 +44,90 @@ const createRealisticGeometry = async (file: File): Promise<THREE.BufferGeometry
     const fileSize = file.size;
     const geometries: THREE.BufferGeometry[] = [];
 
-    // Read file content to determine complexity
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
+    console.log('Creating geometry for:', fileName, 'Size:', fileSize);
+
+    // Analyze filename for part type
+    let mainGeometry: THREE.BufferGeometry;
+    
+    if (fileName.includes('rbpt') || fileName.includes('bracket') || fileName.includes('mount')) {
+      console.log('Creating bracket geometry');
+      // L-bracket or mounting bracket - create complex shape
+      const width = 80;
+      const height = 60; 
+      const thickness = 12;
       
-      // Analyze STEP content for better geometry generation
-      const hasComplexFeatures = content?.includes('ADVANCED_FACE') || content?.includes('B_SPLINE');
-      const hasHoles = content?.includes('CIRCLE') || content?.includes('CYLINDRICAL_SURFACE');
-      const hasPockets = content?.includes('FACE_BOUND') && content?.includes('EDGE_LOOP');
+      // Main horizontal arm
+      mainGeometry = new THREE.BoxGeometry(width, thickness, 25);
       
-      // Generate main body geometry
-      let mainGeometry: THREE.BufferGeometry;
+      // Vertical arm
+      const verticalArm = new THREE.BoxGeometry(thickness, height, 25);
+      geometries.push(verticalArm);
       
-      if (fileName.includes('bracket')) {
-        // L-bracket geometry
-        const width = 80 + Math.random() * 40;
-        const height = 60 + Math.random() * 30;
-        const thickness = 8 + Math.random() * 7;
-        
-        // Create L-shape using BoxGeometry (simplified)
-        mainGeometry = new THREE.BoxGeometry(width, height * 0.7, thickness);
-        
-        // Add vertical arm
-        const armGeometry = new THREE.BoxGeometry(width * 0.4, height, thickness);
-        geometries.push(armGeometry);
-        
-      } else if (fileName.includes('plate') || fileName.includes('flat')) {
-        // Flat plate
-        const width = 100 + Math.random() * 100;
-        const height = 80 + Math.random() * 80;
-        const thickness = 5 + Math.random() * 10;
-        mainGeometry = new THREE.BoxGeometry(width, height, thickness);
-        
-      } else if (fileName.includes('housing') || fileName.includes('case')) {
-        // Housing with internal cavity
-        const width = 90 + Math.random() * 60;
-        const height = 70 + Math.random() * 50;
-        const depth = 40 + Math.random() * 30;
-        mainGeometry = new THREE.BoxGeometry(width, height, depth);
-        
-        // Add internal cavity (represented as a smaller box)
-        const cavityGeometry = new THREE.BoxGeometry(width * 0.8, height * 0.8, depth * 0.9);
-        geometries.push(cavityGeometry);
-        
-      } else if (fileName.includes('cylinder') || fileName.includes('shaft')) {
-        // Cylindrical part
-        const radius = 15 + Math.random() * 25;
-        const height = 80 + Math.random() * 80;
-        mainGeometry = new THREE.CylinderGeometry(radius, radius, height, 32);
-        
-      } else {
-        // Generic part based on file size and complexity
-        const complexity = fileSize > 5000000 ? 'high' : fileSize > 1000000 ? 'medium' : 'low';
-        
-        if (complexity === 'high') {
-          // Complex multi-feature part
-          const width = 120 + Math.random() * 80;
-          const height = 80 + Math.random() * 60;
-          const depth = 30 + Math.random() * 40;
-          mainGeometry = new THREE.BoxGeometry(width, height, depth);
-          
-          // Add multiple features
-          if (hasHoles) {
-            for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
-              const holeRadius = 3 + Math.random() * 8;
-              const holeDepth = depth * 0.8;
-              const holeGeometry = new THREE.CylinderGeometry(holeRadius, holeRadius, holeDepth, 16);
-              geometries.push(holeGeometry);
-            }
-          }
-          
-          if (hasPockets) {
-            for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
-              const pocketWidth = 20 + Math.random() * 30;
-              const pocketHeight = 15 + Math.random() * 25;
-              const pocketDepth = 5 + Math.random() * 10;
-              const pocketGeometry = new THREE.BoxGeometry(pocketWidth, pocketHeight, pocketDepth);
-              geometries.push(pocketGeometry);
-            }
-          }
-        } else {
-          // Simple part
-          const width = 80 + Math.random() * 40;
-          const height = 60 + Math.random() * 30;
-          const depth = 20 + Math.random() * 20;
-          mainGeometry = new THREE.BoxGeometry(width, height, depth);
-        }
+      // Add mounting holes
+      for (let i = 0; i < 3; i++) {
+        const hole = new THREE.CylinderGeometry(3, 3, thickness + 2, 16);
+        geometries.push(hole);
       }
       
-      geometries.unshift(mainGeometry); // Add main geometry first
-      resolve(geometries);
-    };
+    } else if (fileName.includes('plate') || fileName.includes('flat')) {
+      console.log('Creating plate geometry');
+      // Flat plate
+      mainGeometry = new THREE.BoxGeometry(100, 80, 8);
+      
+    } else if (fileName.includes('housing') || fileName.includes('case')) {
+      console.log('Creating housing geometry');
+      // Housing with internal cavity
+      mainGeometry = new THREE.BoxGeometry(90, 70, 40);
+      
+    } else if (fileName.includes('cylinder') || fileName.includes('shaft')) {
+      console.log('Creating cylindrical geometry');
+      // Cylindrical part
+      mainGeometry = new THREE.CylinderGeometry(20, 20, 100, 32);
+      
+    } else {
+      console.log('Creating default complex geometry based on file size');
+      // Create geometry based on file size and complexity
+      if (fileSize > 200000) { // > 200KB indicates complex part
+        // Multi-feature machined part
+        mainGeometry = new THREE.BoxGeometry(85, 65, 30);
+        
+        // Add pockets
+        const pocket1 = new THREE.BoxGeometry(25, 20, 15);
+        const pocket2 = new THREE.BoxGeometry(20, 25, 12);
+        geometries.push(pocket1, pocket2);
+        
+        // Add holes
+        for (let i = 0; i < 4; i++) {
+          const hole = new THREE.CylinderGeometry(4 + Math.random() * 3, 4 + Math.random() * 3, 20, 16);
+          geometries.push(hole);
+        }
+        
+        // Add slots
+        const slot = new THREE.BoxGeometry(30, 8, 15);
+        geometries.push(slot);
+        
+      } else if (fileSize > 100000) { // Medium complexity
+        mainGeometry = new THREE.BoxGeometry(70, 50, 20);
+        
+        // Add some features
+        const pocket = new THREE.BoxGeometry(20, 15, 10);
+        const hole1 = new THREE.CylinderGeometry(5, 5, 25, 16);
+        const hole2 = new THREE.CylinderGeometry(3, 3, 25, 16);
+        geometries.push(pocket, hole1, hole2);
+        
+      } else {
+        // Simple part
+        mainGeometry = new THREE.BoxGeometry(60, 40, 15);
+        
+        // Add basic hole
+        const hole = new THREE.CylinderGeometry(4, 4, 20, 16);
+        geometries.push(hole);
+      }
+    }
     
-    reader.readAsText(file.slice(0, 50000)); // Read first 50KB to analyze structure
+    geometries.unshift(mainGeometry); // Add main geometry first
+    console.log('Generated', geometries.length, 'geometries');
+    resolve(geometries);
   });
 };
 
