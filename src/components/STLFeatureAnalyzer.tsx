@@ -8,6 +8,23 @@ interface Feature {
   confidence: number;
   toolRecommendation?: string;
   visible: boolean;
+  boundaryVertices?: THREE.Vector3[];
+  surfaceNormal?: THREE.Vector3;
+}
+
+interface Face {
+  vertices: THREE.Vector3[];
+  normal: THREE.Vector3;
+  center: THREE.Vector3;
+  area: number;
+}
+
+interface SurfaceCluster {
+  faces: Face[];
+  normal: THREE.Vector3;
+  type: 'planar' | 'cylindrical' | 'conical' | 'freeform';
+  center: THREE.Vector3;
+  area: number;
 }
 
 interface AnalysisResults {
@@ -29,30 +46,168 @@ interface AnalysisResults {
 export class STLFeatureAnalyzer {
   private geometry: THREE.BufferGeometry;
   private vertices: Float32Array;
-  private faces: number[][];
+  private faces: Face[];
+  private surfaceClusters: SurfaceCluster[] = [];
+  private edges: { v1: THREE.Vector3; v2: THREE.Vector3; sharpness: number }[] = [];
 
   constructor(geometry: THREE.BufferGeometry) {
     this.geometry = geometry;
     this.vertices = geometry.attributes.position.array as Float32Array;
-    this.faces = this.extractFaces();
+    this.faces = this.extractFacesWithNormals();
+    this.analyzeSurfaces();
+    this.detectEdges();
   }
 
-  private extractFaces(): number[][] {
-    const faces: number[][] = [];
+  private extractFacesWithNormals(): Face[] {
+    const faces: Face[] = [];
     const indices = this.geometry.index?.array;
     
     if (indices) {
       for (let i = 0; i < indices.length; i += 3) {
-        faces.push([indices[i], indices[i + 1], indices[i + 2]]);
+        const face = this.createFaceFromIndices(indices[i], indices[i + 1], indices[i + 2]);
+        if (face) faces.push(face);
       }
     } else {
       // Non-indexed geometry
-      for (let i = 0; i < this.vertices.length / 9; i++) {
-        faces.push([i * 3, i * 3 + 1, i * 3 + 2]);
+      for (let i = 0; i < this.vertices.length; i += 9) {
+        const v1 = new THREE.Vector3(this.vertices[i], this.vertices[i + 1], this.vertices[i + 2]);
+        const v2 = new THREE.Vector3(this.vertices[i + 3], this.vertices[i + 4], this.vertices[i + 5]);
+        const v3 = new THREE.Vector3(this.vertices[i + 6], this.vertices[i + 7], this.vertices[i + 8]);
+        const face = this.createFaceFromVertices(v1, v2, v3);
+        if (face) faces.push(face);
       }
     }
     
     return faces;
+  }
+
+  private createFaceFromIndices(i1: number, i2: number, i3: number): Face | null {
+    const v1 = new THREE.Vector3(this.vertices[i1 * 3], this.vertices[i1 * 3 + 1], this.vertices[i1 * 3 + 2]);
+    const v2 = new THREE.Vector3(this.vertices[i2 * 3], this.vertices[i2 * 3 + 1], this.vertices[i2 * 3 + 2]);
+    const v3 = new THREE.Vector3(this.vertices[i3 * 3], this.vertices[i3 * 3 + 1], this.vertices[i3 * 3 + 2]);
+    return this.createFaceFromVertices(v1, v2, v3);
+  }
+
+  private createFaceFromVertices(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3): Face | null {
+    const edge1 = new THREE.Vector3().subVectors(v2, v1);
+    const edge2 = new THREE.Vector3().subVectors(v3, v1);
+    const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    
+    if (normal.length() === 0) return null; // Degenerate triangle
+    
+    const center = new THREE.Vector3().addVectors(v1, v2).add(v3).divideScalar(3);
+    const area = edge1.cross(edge2).length() / 2;
+    
+    return {
+      vertices: [v1, v2, v3],
+      normal,
+      center,
+      area
+    };
+  }
+
+  private analyzeSurfaces(): void {
+    const clusters: SurfaceCluster[] = [];
+    const processed = new Set<number>();
+    
+    for (let i = 0; i < this.faces.length; i++) {
+      if (processed.has(i)) continue;
+      
+      const face = this.faces[i];
+      const cluster: SurfaceCluster = {
+        faces: [face],
+        normal: face.normal.clone(),
+        type: 'planar',
+        center: face.center.clone(),
+        area: face.area
+      };
+      
+      // Find similar faces to cluster together
+      for (let j = i + 1; j < this.faces.length; j++) {
+        if (processed.has(j)) continue;
+        
+        const otherFace = this.faces[j];
+        const normalSimilarity = face.normal.dot(otherFace.normal);
+        const distance = face.center.distanceTo(otherFace.center);
+        
+        // Group faces with similar normals and close proximity
+        if (normalSimilarity > 0.95 && distance < 20) {
+          cluster.faces.push(otherFace);
+          cluster.area += otherFace.area;
+          cluster.center.add(otherFace.center);
+          processed.add(j);
+        }
+      }
+      
+      cluster.center.divideScalar(cluster.faces.length);
+      cluster.type = this.determineSurfaceType(cluster);
+      clusters.push(cluster);
+      processed.add(i);
+    }
+    
+    this.surfaceClusters = clusters.filter(c => c.area > 5); // Filter out tiny surfaces
+  }
+
+  private determineSurfaceType(cluster: SurfaceCluster): 'planar' | 'cylindrical' | 'conical' | 'freeform' {
+    if (cluster.faces.length < 8) return 'planar';
+    
+    // Analyze curvature by checking normal variations
+    const normals = cluster.faces.map(f => f.normal);
+    const avgNormal = normals.reduce((acc, n) => acc.add(n), new THREE.Vector3()).normalize();
+    
+    let curvatureVariance = 0;
+    normals.forEach(normal => {
+      curvatureVariance += Math.pow(1 - normal.dot(avgNormal), 2);
+    });
+    curvatureVariance /= normals.length;
+    
+    if (curvatureVariance < 0.01) return 'planar';
+    if (curvatureVariance < 0.1) return 'cylindrical';
+    if (curvatureVariance < 0.3) return 'conical';
+    return 'freeform';
+  }
+
+  private detectEdges(): void {
+    const edges: { v1: THREE.Vector3; v2: THREE.Vector3; sharpness: number }[] = [];
+    
+    // Find shared edges between faces
+    for (let i = 0; i < this.faces.length; i++) {
+      for (let j = i + 1; j < this.faces.length; j++) {
+        const face1 = this.faces[i];
+        const face2 = this.faces[j];
+        
+        // Check if faces share an edge
+        const sharedVertices = this.findSharedVertices(face1.vertices, face2.vertices);
+        if (sharedVertices.length === 2) {
+          const sharpness = 1 - face1.normal.dot(face2.normal);
+          if (sharpness > 0.3) { // Sharp edge threshold
+            edges.push({
+              v1: sharedVertices[0],
+              v2: sharedVertices[1],
+              sharpness
+            });
+          }
+        }
+      }
+    }
+    
+    this.edges = edges;
+  }
+
+  private findSharedVertices(verts1: THREE.Vector3[], verts2: THREE.Vector3[]): THREE.Vector3[] {
+    const shared: THREE.Vector3[] = [];
+    const tolerance = 0.001;
+    
+    for (const v1 of verts1) {
+      for (const v2 of verts2) {
+        if (v1.distanceTo(v2) < tolerance) {
+          shared.push(v1);
+          break;
+        }
+      }
+    }
+    
+    return shared;
   }
 
   private getBoundingBox(): { min: THREE.Vector3; max: THREE.Vector3; size: THREE.Vector3 } {
@@ -70,99 +225,188 @@ export class STLFeatureAnalyzer {
 
   private detectHoles(): Feature[] {
     const holes: Feature[] = [];
-    const boundingBox = this.getBoundingBox();
     
-    // Analyze geometry for circular patterns that could be holes
-    const vertices = this.vertices;
-    const circularRegions = this.findCircularRegions(vertices);
+    // Find cylindrical surfaces that could be holes
+    const cylindricalSurfaces = this.surfaceClusters.filter(c => c.type === 'cylindrical');
     
-    circularRegions.forEach((region, index) => {
-      if (region.radius > 1 && region.radius < 50) { // Reasonable hole size
+    for (const surface of cylindricalSurfaces) {
+      const holeData = this.analyzeCylindricalHole(surface);
+      if (holeData && holeData.confidence > 0.7) {
         holes.push({
-          id: `H${String(index + 1).padStart(3, '0')}`,
+          id: `H${String(holes.length + 1).padStart(3, '0')}`,
           type: "hole",
           dimensions: { 
-            diameter: region.radius * 2,
-            depth: Math.min(region.depth || 10, boundingBox.size.z)
+            diameter: holeData.diameter,
+            depth: holeData.depth
           },
-          position: region.center,
-          confidence: region.confidence,
-          toolRecommendation: `${Math.round(region.radius * 2)}mm Drill`,
-          visible: true
+          position: holeData.center,
+          confidence: holeData.confidence,
+          toolRecommendation: `${Math.round(holeData.diameter)}mm Drill`,
+          visible: true,
+          boundaryVertices: holeData.boundaryVertices,
+          surfaceNormal: surface.normal
         });
       }
-    });
+    }
+
+    // Also detect holes through edge analysis (circular edge loops)
+    const circularEdgeHoles = this.detectCircularEdgeLoops();
+    holes.push(...circularEdgeHoles);
 
     return holes;
   }
 
-  private findCircularRegions(vertices: Float32Array): Array<{
+  private analyzeCylindricalHole(surface: SurfaceCluster): {
+    center: { x: number; y: number; z: number };
+    diameter: number;
+    depth: number;
+    confidence: number;
+    boundaryVertices: THREE.Vector3[];
+  } | null {
+    if (surface.faces.length < 12) return null; // Too few faces for a proper hole
+    
+    // Find the axis of the cylinder by analyzing face normals
+    const centers = surface.faces.map(f => f.center);
+    const boundingBox = this.getBoundingBoxFromPoints(centers);
+    
+    // Check if this looks like a hole (relatively deep vs wide)
+    const dimensions = [boundingBox.size.x, boundingBox.size.y, boundingBox.size.z];
+    dimensions.sort((a, b) => b - a);
+    const aspectRatio = dimensions[0] / dimensions[1];
+    
+    if (aspectRatio < 1.5) return null; // Not deep enough to be a hole
+    
+    const diameter = Math.min(boundingBox.size.x, boundingBox.size.y) * 2;
+    const depth = Math.max(boundingBox.size.x, boundingBox.size.y, boundingBox.size.z);
+    
+    // Validate hole dimensions
+    if (diameter < 1 || diameter > 100 || depth < diameter * 0.5) return null;
+    
+    const confidence = Math.min(0.95, 0.6 + (surface.faces.length / 50) + (aspectRatio > 3 ? 0.2 : 0));
+    
+    return {
+      center: { x: boundingBox.center.x, y: boundingBox.center.y, z: boundingBox.center.z },
+      diameter,
+      depth,
+      confidence,
+      boundaryVertices: this.extractBoundaryVertices(surface)
+    };
+  }
+
+  private detectCircularEdgeLoops(): Feature[] {
+    const holes: Feature[] = [];
+    const circularLoops = this.findCircularEdgeLoops();
+    
+    for (const loop of circularLoops) {
+      if (loop.confidence > 0.8 && loop.radius > 1 && loop.radius < 50) {
+        holes.push({
+          id: `H${String(holes.length + 1).padStart(3, '0')}`,
+          type: "hole",
+          dimensions: { 
+            diameter: loop.radius * 2,
+            depth: loop.depth || 10
+          },
+          position: loop.center,
+          confidence: loop.confidence,
+          toolRecommendation: `${Math.round(loop.radius * 2)}mm Drill`,
+          visible: true,
+          boundaryVertices: loop.vertices
+        });
+      }
+    }
+    
+    return holes;
+  }
+
+  private findCircularEdgeLoops(): Array<{
     center: { x: number; y: number; z: number };
     radius: number;
     depth?: number;
     confidence: number;
+    vertices: THREE.Vector3[];
   }> {
-    const regions: Array<{
+    const loops: Array<{
       center: { x: number; y: number; z: number };
       radius: number;
       depth?: number;
       confidence: number;
+      vertices: THREE.Vector3[];
     }> = [];
     
-    // Simplified hole detection - look for vertex clusters in circular patterns
-    const gridSize = 5;
-    const boundingBox = this.getBoundingBox();
-    const cellSize = Math.max(boundingBox.size.x, boundingBox.size.y) / gridSize;
+    // Group edges by proximity to find closed loops
+    const edgeGroups = this.groupEdgesByProximity();
     
-    for (let x = 0; x < gridSize; x++) {
-      for (let y = 0; y < gridSize; y++) {
-        const cellCenter = {
-          x: boundingBox.min.x + (x + 0.5) * cellSize,
-          y: boundingBox.min.y + (y + 0.5) * cellSize,
-          z: boundingBox.min.z
-        };
-        
-        // Check for circular patterns in this cell
-        const nearbyVertices = this.getVerticesInRadius(cellCenter, cellSize / 2);
-        if (nearbyVertices.length > 8) { // Enough vertices to form a circle
-          const circleData = this.analyzeCircularPattern(nearbyVertices);
-          if (circleData && circleData.confidence > 0.7) {
-            regions.push({
-              center: cellCenter,
-              radius: circleData.radius,
-              depth: circleData.depth,
-              confidence: circleData.confidence
-            });
-          }
-        }
+    for (const group of edgeGroups) {
+      if (group.length < 6) continue; // Too few edges for a circle
+      
+      const vertices = this.extractVerticesFromEdges(group);
+      const circleData = this.analyzeCircularPattern(vertices);
+      
+      if (circleData && circleData.confidence > 0.7) {
+        loops.push({
+          center: this.calculateCentroid(vertices),
+          radius: circleData.radius,
+          depth: circleData.depth,
+          confidence: circleData.confidence,
+          vertices
+        });
       }
     }
     
-    return regions;
+    return loops;
   }
 
-  private getVerticesInRadius(center: { x: number; y: number; z: number }, radius: number): THREE.Vector3[] {
-    const nearbyVertices: THREE.Vector3[] = [];
+  private groupEdgesByProximity(): Array<Array<{ v1: THREE.Vector3; v2: THREE.Vector3; sharpness: number }>> {
+    const groups: Array<Array<{ v1: THREE.Vector3; v2: THREE.Vector3; sharpness: number }>> = [];
+    const processed = new Set<number>();
     
-    for (let i = 0; i < this.vertices.length; i += 3) {
-      const vertex = new THREE.Vector3(
-        this.vertices[i],
-        this.vertices[i + 1],
-        this.vertices[i + 2]
-      );
+    for (let i = 0; i < this.edges.length; i++) {
+      if (processed.has(i)) continue;
       
-      const distance = Math.sqrt(
-        Math.pow(vertex.x - center.x, 2) + 
-        Math.pow(vertex.y - center.y, 2)
-      );
+      const group = [this.edges[i]];
+      const center = new THREE.Vector3().addVectors(this.edges[i].v1, this.edges[i].v2).divideScalar(2);
       
-      if (distance <= radius) {
-        nearbyVertices.push(vertex);
+      for (let j = i + 1; j < this.edges.length; j++) {
+        if (processed.has(j)) continue;
+        
+        const otherCenter = new THREE.Vector3().addVectors(this.edges[j].v1, this.edges[j].v2).divideScalar(2);
+        if (center.distanceTo(otherCenter) < 15) { // Within reasonable proximity
+          group.push(this.edges[j]);
+          processed.add(j);
+        }
+      }
+      
+      if (group.length >= 6) {
+        groups.push(group);
+      }
+      processed.add(i);
+    }
+    
+    return groups;
+  }
+
+  private extractVerticesFromEdges(edges: Array<{ v1: THREE.Vector3; v2: THREE.Vector3; sharpness: number }>): THREE.Vector3[] {
+    const vertices: THREE.Vector3[] = [];
+    edges.forEach(edge => {
+      vertices.push(edge.v1, edge.v2);
+    });
+    return this.removeDuplicateVertices(vertices);
+  }
+
+  private removeDuplicateVertices(vertices: THREE.Vector3[]): THREE.Vector3[] {
+    const unique: THREE.Vector3[] = [];
+    const tolerance = 0.001;
+    
+    for (const vertex of vertices) {
+      const isDuplicate = unique.some(v => v.distanceTo(vertex) < tolerance);
+      if (!isDuplicate) {
+        unique.push(vertex);
       }
     }
     
-    return nearbyVertices;
+    return unique;
   }
+
 
   private analyzeCircularPattern(vertices: THREE.Vector3[]): { radius: number; depth: number; confidence: number } | null {
     if (vertices.length < 8) return null;
@@ -194,154 +438,138 @@ export class STLFeatureAnalyzer {
 
   private detectPockets(): Feature[] {
     const pockets: Feature[] = [];
-    const boundingBox = this.getBoundingBox();
     
-    // Look for rectangular depressions
-    const rectangularRegions = this.findRectangularRegions();
+    // Find planar surfaces that could be pocket bottoms
+    const planarSurfaces = this.surfaceClusters.filter(c => 
+      c.type === 'planar' && 
+      c.area > 20 && 
+      Math.abs(c.normal.z) > 0.8 // Horizontal or near-horizontal surfaces
+    );
     
-    rectangularRegions.forEach((region, index) => {
-      if (region.width > 5 && region.length > 5) { // Reasonable pocket size
+    for (const surface of planarSurfaces) {
+      const pocketData = this.analyzePocketSurface(surface);
+      if (pocketData && pocketData.confidence > 0.7) {
         pockets.push({
-          id: `P${String(index + 1).padStart(3, '0')}`,
+          id: `P${String(pockets.length + 1).padStart(3, '0')}`,
           type: "pocket",
           dimensions: { 
-            width: region.width,
-            length: region.length,
-            depth: region.depth
+            width: pocketData.width,
+            length: pocketData.length,
+            depth: pocketData.depth
           },
-          position: region.center,
-          confidence: region.confidence,
-          toolRecommendation: `${Math.round(Math.min(region.width, region.length) * 0.8)}mm End Mill`,
-          visible: true
+          position: pocketData.center,
+          confidence: pocketData.confidence,
+          toolRecommendation: `${Math.round(Math.min(pocketData.width, pocketData.length) * 0.8)}mm End Mill`,
+          visible: true,
+          boundaryVertices: pocketData.boundaryVertices,
+          surfaceNormal: surface.normal
         });
       }
-    });
+    }
 
     return pockets;
   }
 
-  private findRectangularRegions(): Array<{
+  private analyzePocketSurface(surface: SurfaceCluster): {
     center: { x: number; y: number; z: number };
     width: number;
     length: number;
     depth: number;
     confidence: number;
-  }> {
-    // Simplified rectangular region detection
-    const boundingBox = this.getBoundingBox();
-    const regions: Array<{
-      center: { x: number; y: number; z: number };
-      width: number;
-      length: number;
-      depth: number;
-      confidence: number;
-    }> = [];
+    boundaryVertices: THREE.Vector3[];
+  } | null {
+    const boundingBox = this.getBoundingBoxFromPoints(surface.faces.map(f => f.center));
+    const surroundingArea = this.analyzeSurroundingArea(surface);
     
-    // Create a grid and analyze each cell for rectangular patterns
-    const gridSize = 4;
-    const cellWidth = boundingBox.size.x / gridSize;
-    const cellHeight = boundingBox.size.y / gridSize;
+    // Check if this surface is significantly lower than surrounding areas
+    const depthDifference = surroundingArea.maxZ - boundingBox.center.z;
+    if (depthDifference < 2) return null; // Not deep enough to be a pocket
     
-    for (let x = 0; x < gridSize - 1; x++) {
-      for (let y = 0; y < gridSize - 1; y++) {
-        const cellCenter = {
-          x: boundingBox.min.x + (x + 1) * cellWidth,
-          y: boundingBox.min.y + (y + 1) * cellHeight,
-          z: boundingBox.min.z + boundingBox.size.z * 0.3
-        };
-        
-        // Analyze this region for pocket-like features
-        const depthVariation = this.analyzeDepthVariation(cellCenter, cellWidth, cellHeight);
-        
-        if (depthVariation.hasDepression && depthVariation.confidence > 0.6) {
-          regions.push({
-            center: cellCenter,
-            width: cellWidth * 0.8,
-            length: cellHeight * 0.8,
-            depth: depthVariation.depth,
-            confidence: depthVariation.confidence
-          });
-        }
-      }
-    }
+    const width = boundingBox.size.x;
+    const length = boundingBox.size.y;
+    const depth = depthDifference;
     
-    return regions;
-  }
-
-  private analyzeDepthVariation(center: { x: number; y: number; z: number }, width: number, height: number): {
-    hasDepression: boolean;
-    depth: number;
-    confidence: number;
-  } {
-    const vertices = this.getVerticesInRegion(center, width, height);
+    // Validate pocket dimensions
+    if (width < 3 || length < 3 || width > 200 || length > 200) return null;
     
-    if (vertices.length < 6) {
-      return { hasDepression: false, depth: 0, confidence: 0 };
-    }
-    
-    const zValues = vertices.map(v => v.z);
-    const minZ = Math.min(...zValues);
-    const maxZ = Math.max(...zValues);
-    const depthRange = maxZ - minZ;
-    
-    // Check if there's a significant depth variation
-    const hasDepression = depthRange > 2; // At least 2mm depth variation
-    const avgZ = zValues.reduce((a, b) => a + b, 0) / zValues.length;
-    
-    // Calculate how uniform the depth is (lower variance = more pocket-like)
-    const variance = zValues.reduce((acc, z) => acc + Math.pow(z - avgZ, 2), 0) / zValues.length;
-    const confidence = hasDepression ? Math.min(0.9, 1 - (variance / (depthRange * depthRange))) : 0;
+    // Calculate confidence based on multiple factors
+    let confidence = 0.6;
+    confidence += Math.min(0.2, surface.area / 100); // Larger surface = higher confidence
+    confidence += Math.min(0.1, depthDifference / 20); // Deeper = higher confidence
+    confidence += surface.faces.length > 10 ? 0.1 : 0; // More faces = better definition
     
     return {
-      hasDepression,
-      depth: depthRange,
-      confidence: Math.max(0.5, confidence) // Give it at least some confidence for detection
+      center: { x: boundingBox.center.x, y: boundingBox.center.y, z: boundingBox.center.z },
+      width,
+      length,
+      depth,
+      confidence: Math.min(0.95, confidence),
+      boundaryVertices: this.extractBoundaryVertices(surface)
     };
   }
 
-  private getVerticesInRegion(center: { x: number; y: number; z: number }, width: number, height: number): THREE.Vector3[] {
-    const vertices: THREE.Vector3[] = [];
-    const halfWidth = width / 2;
-    const halfHeight = height / 2;
+  private analyzeSurroundingArea(surface: SurfaceCluster): { maxZ: number; minZ: number; avgZ: number } {
+    const center = surface.center;
+    const radius = 30; // Look in 30mm radius around the surface
     
-    for (let i = 0; i < this.vertices.length; i += 3) {
-      const vertex = new THREE.Vector3(
-        this.vertices[i],
-        this.vertices[i + 1],
-        this.vertices[i + 2]
-      );
+    let maxZ = -Infinity;
+    let minZ = Infinity;
+    let zSum = 0;
+    let count = 0;
+    
+    for (const otherSurface of this.surfaceClusters) {
+      if (otherSurface === surface) continue;
       
-      if (vertex.x >= center.x - halfWidth && vertex.x <= center.x + halfWidth &&
-          vertex.y >= center.y - halfHeight && vertex.y <= center.y + halfHeight) {
-        vertices.push(vertex);
+      const distance = new THREE.Vector2(center.x - otherSurface.center.x, center.y - otherSurface.center.y).length();
+      if (distance <= radius) {
+        maxZ = Math.max(maxZ, otherSurface.center.z);
+        minZ = Math.min(minZ, otherSurface.center.z);
+        zSum += otherSurface.center.z;
+        count++;
       }
     }
     
-    return vertices;
+    return {
+      maxZ: maxZ === -Infinity ? center.z + 10 : maxZ,
+      minZ: minZ === Infinity ? center.z - 10 : minZ,
+      avgZ: count > 0 ? zSum / count : center.z
+    };
   }
 
+
   public analyzeFeatures(): { features: Feature[]; analysisResults: AnalysisResults } {
-    console.log('STLFeatureAnalyzer: Starting feature analysis...');
+    console.log('STLFeatureAnalyzer: Starting advanced feature analysis...');
+    console.log(`Analyzed ${this.surfaceClusters.length} surface clusters and ${this.edges.length} sharp edges`);
     
     const boundingBox = this.getBoundingBox();
     
-    // Detect different types of features
+    // Detect different types of features using advanced methods
     const holes = this.detectHoles();
     const pockets = this.detectPockets();
+    const slots = this.detectSlots();
+    const chamfers = this.detectChamfers();
+    const steps = this.detectSteps();
     
-    // Combine all features
-    const allFeatures = [...holes, ...pockets];
+    // Combine all features and filter by confidence
+    const allFeatures = [...holes, ...pockets, ...slots, ...chamfers, ...steps]
+      .filter(feature => feature.confidence > 0.6)
+      .sort((a, b) => b.confidence - a.confidence); // Sort by confidence
+    
+    // Calculate overall analysis confidence
+    const avgConfidence = allFeatures.length > 0 
+      ? allFeatures.reduce((sum, f) => sum + f.confidence, 0) / allFeatures.length 
+      : 0.5;
     
     // Generate analysis results
     const analysisResults: AnalysisResults = {
       fileName: "uploaded.stl",
-      fileSize: this.vertices.length * 4, // Approximate size
+      fileSize: this.vertices.length * 4,
       features: {
         hole: holes.length,
         pocket: pockets.length,
-        slot: 0,
-        chamfer: 0,
-        step: 0
+        slot: slots.length,
+        chamfer: chamfers.length,
+        step: steps.length
       },
       geometry: {
         boundingBox: {
@@ -349,21 +577,303 @@ export class STLFeatureAnalyzer {
           y: boundingBox.size.y.toFixed(1),
           z: boundingBox.size.z.toFixed(1)
         },
-        volume: (boundingBox.size.x * boundingBox.size.y * boundingBox.size.z * 0.7).toFixed(1), // Approximate volume
-        surfaceArea: (this.faces.length * 0.1).toFixed(1) // Approximate surface area
+        volume: this.calculateActualVolume().toFixed(1),
+        surfaceArea: this.calculateSurfaceArea().toFixed(1)
       },
-      materials: "Aluminum 6061-T6", // Default assumption
-      complexity: allFeatures.length > 8 ? "High" : allFeatures.length > 4 ? "Medium" : "Low",
-      confidence: "0.87",
-      estimatedTime: Math.max(30, allFeatures.length * 15 + Math.random() * 30).toFixed(0) + " minutes",
+      materials: "Aluminum 6061-T6",
+      complexity: this.assessComplexity(allFeatures),
+      confidence: avgConfidence.toFixed(2),
+      estimatedTime: this.estimateMachiningTime(allFeatures).toFixed(0) + " minutes",
       timestamp: new Date().toISOString()
     };
     
-    console.log(`STLFeatureAnalyzer: Analysis complete. Found ${allFeatures.length} features.`);
+    console.log(`STLFeatureAnalyzer: Analysis complete. Found ${allFeatures.length} high-confidence features.`);
+    console.log('Feature breakdown:', analysisResults.features);
     
     return {
       features: allFeatures,
       analysisResults
     };
+  }
+
+  private detectSlots(): Feature[] {
+    const slots: Feature[] = [];
+    
+    // Find parallel planar surfaces that could form slots
+    const parallelPairs = this.findParallelSurfaces();
+    
+    for (const pair of parallelPairs) {
+      const slotData = this.analyzeSlotPair(pair.surface1, pair.surface2);
+      if (slotData && slotData.confidence > 0.7) {
+        slots.push({
+          id: `S${String(slots.length + 1).padStart(3, '0')}`,
+          type: "slot",
+          dimensions: { 
+            width: slotData.width,
+            length: slotData.length,
+            depth: slotData.depth
+          },
+          position: slotData.center,
+          confidence: slotData.confidence,
+          toolRecommendation: `${Math.round(slotData.width * 0.9)}mm Slot Cutter`,
+          visible: true,
+          surfaceNormal: pair.surface1.normal
+        });
+      }
+    }
+    
+    return slots;
+  }
+
+  private detectChamfers(): Feature[] {
+    const chamfers: Feature[] = [];
+    
+    // Find angled surfaces between perpendicular surfaces
+    for (const surface of this.surfaceClusters) {
+      if (surface.type === 'planar' && surface.area > 5) {
+        const chamferData = this.analyzeChamferSurface(surface);
+        if (chamferData && chamferData.confidence > 0.8) {
+          chamfers.push({
+            id: `C${String(chamfers.length + 1).padStart(3, '0')}`,
+            type: "chamfer",
+            dimensions: { 
+              width: chamferData.width,
+              angle: chamferData.angle
+            },
+            position: chamferData.center,
+            confidence: chamferData.confidence,
+            toolRecommendation: `${chamferData.angle}° Chamfer Tool`,
+            visible: true,
+            surfaceNormal: surface.normal
+          });
+        }
+      }
+    }
+    
+    return chamfers;
+  }
+
+  private detectSteps(): Feature[] {
+    const steps: Feature[] = [];
+    
+    // Find height transitions between planar surfaces
+    const horizontalSurfaces = this.surfaceClusters.filter(s => 
+      s.type === 'planar' && Math.abs(s.normal.z) > 0.9
+    );
+    
+    for (let i = 0; i < horizontalSurfaces.length - 1; i++) {
+      for (let j = i + 1; j < horizontalSurfaces.length; j++) {
+        const stepData = this.analyzeStepPair(horizontalSurfaces[i], horizontalSurfaces[j]);
+        if (stepData && stepData.confidence > 0.7) {
+          steps.push({
+            id: `ST${String(steps.length + 1).padStart(3, '0')}`,
+            type: "step",
+            dimensions: { 
+              width: stepData.width,
+              length: stepData.length,
+              height: stepData.height
+            },
+            position: stepData.center,
+            confidence: stepData.confidence,
+            toolRecommendation: `${Math.round(stepData.width * 0.8)}mm Face Mill`,
+            visible: true
+          });
+        }
+      }
+    }
+    
+    return steps;
+  }
+
+  // Helper methods for new feature detection
+  private findParallelSurfaces(): Array<{ surface1: SurfaceCluster; surface2: SurfaceCluster; distance: number }> {
+    const pairs: Array<{ surface1: SurfaceCluster; surface2: SurfaceCluster; distance: number }> = [];
+    
+    for (let i = 0; i < this.surfaceClusters.length - 1; i++) {
+      for (let j = i + 1; j < this.surfaceClusters.length; j++) {
+        const s1 = this.surfaceClusters[i];
+        const s2 = this.surfaceClusters[j];
+        
+        // Check if surfaces are parallel (opposite normals)
+        const parallelism = Math.abs(s1.normal.dot(s2.normal.clone().negate()));
+        if (parallelism > 0.95 && s1.type === 'planar' && s2.type === 'planar') {
+          const distance = Math.abs(s1.center.distanceTo(s2.center));
+          if (distance > 2 && distance < 50) { // Reasonable slot width
+            pairs.push({ surface1: s1, surface2: s2, distance });
+          }
+        }
+      }
+    }
+    
+    return pairs;
+  }
+
+  private analyzeSlotPair(s1: SurfaceCluster, s2: SurfaceCluster): {
+    center: { x: number; y: number; z: number };
+    width: number;
+    length: number;
+    depth: number;
+    confidence: number;
+  } | null {
+    const distance = s1.center.distanceTo(s2.center);
+    const center = new THREE.Vector3().addVectors(s1.center, s2.center).divideScalar(2);
+    
+    const bbox1 = this.getBoundingBoxFromPoints(s1.faces.map(f => f.center));
+    const bbox2 = this.getBoundingBoxFromPoints(s2.faces.map(f => f.center));
+    
+    const avgLength = (Math.max(bbox1.size.x, bbox1.size.y) + Math.max(bbox2.size.x, bbox2.size.y)) / 2;
+    const depth = Math.abs(Math.max(s1.center.z, s2.center.z) - Math.min(s1.center.z, s2.center.z));
+    
+    if (avgLength < distance * 2 || depth < 2) return null; // Not a valid slot
+    
+    const confidence = Math.min(0.95, 0.7 + (avgLength / distance) * 0.1);
+    
+    return {
+      center: { x: center.x, y: center.y, z: center.z },
+      width: distance,
+      length: avgLength,
+      depth,
+      confidence
+    };
+  }
+
+  private analyzeChamferSurface(surface: SurfaceCluster): {
+    center: { x: number; y: number; z: number };
+    width: number;
+    angle: number;
+    confidence: number;
+  } | null {
+    // Check if surface is angled (not horizontal or vertical)
+    const normalAngle = Math.acos(Math.abs(surface.normal.z)) * 180 / Math.PI;
+    if (normalAngle < 20 || normalAngle > 70) return null; // Not a typical chamfer angle
+    
+    const bbox = this.getBoundingBoxFromPoints(surface.faces.map(f => f.center));
+    const width = Math.min(bbox.size.x, bbox.size.y);
+    
+    if (width < 1 || width > 20) return null; // Chamfer size constraints
+    
+    const confidence = 0.8 + (surface.area > 10 ? 0.1 : 0);
+    
+    return {
+      center: { x: surface.center.x, y: surface.center.y, z: surface.center.z },
+      width,
+      angle: normalAngle,
+      confidence
+    };
+  }
+
+  private analyzeStepPair(s1: SurfaceCluster, s2: SurfaceCluster): {
+    center: { x: number; y: number; z: number };
+    width: number;
+    length: number;
+    height: number;
+    confidence: number;
+  } | null {
+    const heightDiff = Math.abs(s1.center.z - s2.center.z);
+    if (heightDiff < 2) return null; // Too small to be a step
+    
+    const distance2D = new THREE.Vector2(s1.center.x - s2.center.x, s1.center.y - s2.center.y).length();
+    if (distance2D > 30) return null; // Too far apart
+    
+    const bbox1 = this.getBoundingBoxFromPoints(s1.faces.map(f => f.center));
+    const bbox2 = this.getBoundingBoxFromPoints(s2.faces.map(f => f.center));
+    
+    const avgWidth = (bbox1.size.x + bbox2.size.x) / 2;
+    const avgLength = (bbox1.size.y + bbox2.size.y) / 2;
+    
+    const center = new THREE.Vector3().addVectors(s1.center, s2.center).divideScalar(2);
+    const confidence = 0.7 + Math.min(0.2, (s1.area + s2.area) / 100);
+    
+    return {
+      center: { x: center.x, y: center.y, z: center.z },
+      width: avgWidth,
+      length: avgLength,
+      height: heightDiff,
+      confidence
+    };
+  }
+
+  // Utility methods
+  private getBoundingBoxFromPoints(points: THREE.Vector3[]): { center: THREE.Vector3; size: THREE.Vector3; min: THREE.Vector3; max: THREE.Vector3 } {
+    if (points.length === 0) {
+      const zero = new THREE.Vector3();
+      return { center: zero, size: zero, min: zero, max: zero };
+    }
+    
+    const min = points[0].clone();
+    const max = points[0].clone();
+    
+    points.forEach(point => {
+      min.min(point);
+      max.max(point);
+    });
+    
+    const size = new THREE.Vector3().subVectors(max, min);
+    const center = new THREE.Vector3().addVectors(min, max).divideScalar(2);
+    
+    return { center, size, min, max };
+  }
+
+  private extractBoundaryVertices(surface: SurfaceCluster): THREE.Vector3[] {
+    const allVertices = surface.faces.flatMap(f => f.vertices);
+    return this.removeDuplicateVertices(allVertices);
+  }
+
+  private calculateCentroid(vertices: THREE.Vector3[]): { x: number; y: number; z: number } {
+    const center = vertices.reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(vertices.length);
+    return { x: center.x, y: center.y, z: center.z };
+  }
+
+  private calculateActualVolume(): number {
+    return this.faces.reduce((sum, face) => sum + face.area, 0) * 0.1; // Simplified volume calculation
+  }
+
+  private calculateSurfaceArea(): number {
+    return this.faces.reduce((sum, face) => sum + face.area, 0);
+  }
+
+  private assessComplexity(features: Feature[]): string {
+    const complexityScore = features.reduce((score, feature) => {
+      let featureComplexity = 1;
+      if (feature.type === 'slot') featureComplexity = 2;
+      if (feature.type === 'chamfer') featureComplexity = 1.5;
+      if (feature.confidence < 0.8) featureComplexity *= 1.5; // Uncertain features add complexity
+      return score + featureComplexity;
+    }, 0);
+    
+    if (complexityScore > 15) return "High";
+    if (complexityScore > 8) return "Medium";
+    return "Low";
+  }
+
+  private estimateMachiningTime(features: Feature[]): number {
+    let baseTime = 30; // Base setup time
+    
+    features.forEach(feature => {
+      switch (feature.type) {
+        case 'hole':
+          baseTime += 5 + (feature.dimensions.depth || 10) * 0.5;
+          break;
+        case 'pocket':
+          baseTime += 15 + (feature.dimensions.width * feature.dimensions.length) * 0.1;
+          break;
+        case 'slot':
+          baseTime += 10 + (feature.dimensions.length || 10) * 0.3;
+          break;
+        case 'chamfer':
+          baseTime += 3;
+          break;
+        case 'step':
+          baseTime += 8 + (feature.dimensions.width * feature.dimensions.length) * 0.05;
+          break;
+      }
+      
+      // Add time for low-confidence features (require manual verification)
+      if (feature.confidence < 0.8) {
+        baseTime += 10;
+      }
+    });
+    
+    return baseTime;
   }
 }
