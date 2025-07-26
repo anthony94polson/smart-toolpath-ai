@@ -142,6 +142,8 @@ const Workspace = () => {
             <ToolpathGeneration 
               toolAssignments={toolAssignments}
               onSimulationComplete={handleSimulationComplete}
+              uploadedFile={uploadedFile}
+              analysisResults={analysisResults}
             />
           )}
           

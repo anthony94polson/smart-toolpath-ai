@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
+import { MaterialRemovalSimulation } from './MaterialRemovalSimulation';
 import { 
   Play, 
   Pause, 
@@ -20,9 +21,11 @@ import {
 interface ToolpathGenerationProps {
   toolAssignments: any[];
   onSimulationComplete: (results: any) => void;
+  uploadedFile?: File;
+  analysisResults?: any;
 }
 
-const ToolpathGeneration = ({ toolAssignments, onSimulationComplete }: ToolpathGenerationProps) => {
+const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFile, analysisResults }: ToolpathGenerationProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -314,49 +317,58 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete }: ToolpathG
             </TabsContent>
 
             <TabsContent value="simulation">
-              <Card className="p-6">
-                <div className="text-center mb-6">
+              <div className="space-y-4">
+                <div className="text-center mb-4">
                   <h3 className="text-xl font-semibold mb-2">CNC Simulation</h3>
                   <p className="text-muted-foreground">
-                    Virtual material removal with collision detection
+                    Real-time material removal with toolpath visualization
                   </p>
                 </div>
 
-                <div className="bg-muted rounded-lg h-64 flex items-center justify-center mb-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-primary/20 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                      <Play className="w-8 h-8 text-primary" />
-                    </div>
-                    <p className="text-muted-foreground">3D simulation view</p>
-                    <p className="text-sm text-muted-foreground">Material removal animation</p>
-                  </div>
-                </div>
+                <div className="h-[600px]">
+                  <MaterialRemovalSimulation 
+                    operations={operations.map(op => ({
+                      id: op.id,
+                      type: op.type.toLowerCase() as 'roughing' | 'finishing' | 'drilling' | 'chamfering',
+                      name: op.id + ' - ' + op.type,
+                      tool: op.tool,
+                      feature: op.feature,
+                      duration: parseInt(op.estimatedTime.split(' ')[0]) / 10, // Scale down for demo
+                      toolpath: []
+                    }))}
+                    onSimulationComplete={() => {
+                      const totalFeatures = toolAssignments.length;
+                      const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
+                      const estimatedTime = operations.reduce((sum, op) => {
+                        const minutes = parseInt(op.estimatedTime.split(' ')[0]);
+                        return sum + minutes;
+                      }, 0);
 
-                {isSimulating && (
-                  <div className="space-y-4 mb-6">
-                    <div className="flex justify-between text-sm">
-                      <span>Simulating operation {Math.floor(simulationProgress / 25) + 1} of 4...</span>
-                      <span>{simulationProgress}%</span>
-                    </div>
-                    <Progress value={simulationProgress} className="h-3" />
-                  </div>
-                )}
+                      const setupTime = uniqueTools * 2;
+                      const actualTime = estimatedTime + setupTime;
 
-                <div className="flex justify-center space-x-4">
-                  <Button variant="outline" onClick={startSimulation} disabled={isSimulating}>
-                    <Play className="w-4 h-4 mr-2" />
-                    Start
-                  </Button>
-                  <Button variant="outline" disabled={!isSimulating}>
-                    <Pause className="w-4 h-4 mr-2" />
-                    Pause
-                  </Button>
-                  <Button variant="outline">
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Reset
-                  </Button>
+                      const results = {
+                        totalTime: `${actualTime} minutes`,
+                        machiningTime: estimatedTime,
+                        setupTime: setupTime,
+                        toolChanges: uniqueTools,
+                        operations: totalFeatures,
+                        totalDistance: (estimatedTime * 85 + Math.random() * 1000).toFixed(1),
+                        materialRemoved: (totalFeatures * 2.5 + Math.random() * 5).toFixed(1) + " cm³",
+                        quality: actualTime < 30 ? "Excellent" : actualTime < 60 ? "Good" : "Fair",
+                        warnings: uniqueTools > 5 ? 2 : Math.random() > 0.7 ? 1 : 0,
+                        gcode: {
+                          lines: Math.floor(totalFeatures * 800 + estimatedTime * 50),
+                          size: (totalFeatures * 45 + estimatedTime * 3.2).toFixed(1) + " KB"
+                        },
+                        efficiency: Math.min(95, 70 + (30 - actualTime) / 2)
+                      };
+
+                      onSimulationComplete(results);
+                    }}
+                  />
                 </div>
-              </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="parameters">
