@@ -481,195 +481,390 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
 function generateRealisticToolpath(operation: any, originalGeometry?: THREE.BufferGeometry): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
   const feature = operation.feature;
+  const tool = operation.tool;
   
-  if (!feature.boundaryVertices || feature.boundaryVertices.length === 0) {
+  if (!feature) {
     return generateFallbackToolpath(operation);
   }
   
-  // Use actual feature geometry for toolpath generation
   const featureCenter = new THREE.Vector3(
-    feature.position.x,
-    feature.position.y,
-    feature.position.z
+    feature.position.x || 0,
+    feature.position.y || 0,
+    feature.position.z || 0
   );
+  
+  const toolDiameter = tool?.diameter || 10;
+  const safeHeight = 25; // mm above part
+  const retractHeight = 5; // mm above part
   
   switch (operation.type) {
     case 'roughing':
-      // Adaptive clearing based on actual feature boundary
       if (feature.type === 'pocket') {
-        const stepover = (operation.tool?.diameter || 10) * 0.7; // 70% stepover
-        const depth = feature.dimensions.depth || 5;
-        
-        // Generate zigzag pattern within boundary
-        const bounds = calculateFeatureBounds(feature.boundaryVertices);
-        
-        for (let z = featureCenter.z; z >= featureCenter.z - depth; z -= 2) {
-          for (let y = bounds.min.y; y <= bounds.max.y; y += stepover) {
-            const direction = Math.floor((y - bounds.min.y) / stepover) % 2 === 0 ? 1 : -1;
-            const startX = direction > 0 ? bounds.min.x : bounds.max.x;
-            const endX = direction > 0 ? bounds.max.x : bounds.min.x;
-            
-            for (let x = startX; direction > 0 ? x <= endX : x >= endX; x += direction * stepover/3) {
-              if (isPointInFeature(new THREE.Vector3(x, y, z), feature)) {
-                points.push(new THREE.Vector3(x, y, z));
-              }
-            }
-          }
-        }
+        return generatePocketRoughingToolpath(feature, toolDiameter, safeHeight, retractHeight);
       }
       break;
       
     case 'finishing':
-      // Contour finishing around feature boundary
-      if (feature.boundaryVertices) {
-        const finishAllowance = 0.5; // 0.5mm finish allowance
-        const offsetBoundary = offsetBoundary2D(feature.boundaryVertices, -finishAllowance);
-        
-        offsetBoundary.forEach(vertex => {
-          points.push(vertex.clone());
-        });
+      if (feature.type === 'pocket') {
+        return generatePocketFinishingToolpath(feature, toolDiameter, safeHeight, retractHeight);
       }
       break;
       
     case 'drilling':
-      // Realistic drilling cycle
       if (feature.type === 'hole') {
-        const depth = feature.dimensions.depth || 10;
-        const peckDepth = Math.min(depth / 3, 5); // Peck drilling
-        
-        // Rapid to start position
-        points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 5));
-        
-        // Drilling cycle with pecks
-        for (let currentDepth = 0; currentDepth < depth; currentDepth += peckDepth) {
-          const targetZ = featureCenter.z - Math.min(currentDepth + peckDepth, depth);
-          points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, targetZ));
-          
-          // Retract for chip removal
-          if (currentDepth + peckDepth < depth) {
-            points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 2));
-          }
-        }
-        
-        // Final retract
-        points.push(new THREE.Vector3(featureCenter.x, featureCenter.y, featureCenter.z + 10));
+        return generateDrillingToolpath(feature, toolDiameter, safeHeight, retractHeight);
       }
       break;
       
     case 'chamfering':
-      // Chamfer around edges
-      if (feature.boundaryVertices) {
-        feature.boundaryVertices.forEach(vertex => {
-          points.push(vertex.clone());
-        });
-      }
-      break;
+      return generateChamferToolpath(feature, toolDiameter, safeHeight, retractHeight);
   }
   
-  return points.length > 0 ? points : generateFallbackToolpath(operation);
+  return generateFallbackToolpath(operation);
 }
 
+// Generate adaptive clearing toolpath for pocket roughing
+function generatePocketRoughingToolpath(
+  feature: any, 
+  toolDiameter: number, 
+  safeHeight: number, 
+  retractHeight: number
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const width = feature.dimensions.width || 20;
+  const length = feature.dimensions.length || 20;
+  const depth = feature.dimensions.depth || 10;
+  const center = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  
+  const stepover = toolDiameter * 0.6; // 60% stepover
+  const stepdown = toolDiameter * 0.5; // 50% stepdown
+  const numPasses = Math.ceil(depth / stepdown);
+  
+  // Rapid to safe position
+  points.push(new THREE.Vector3(center.x, center.y, center.z + safeHeight));
+  points.push(new THREE.Vector3(center.x, center.y, center.z + retractHeight));
+  
+  for (let pass = 0; pass < numPasses; pass++) {
+    const currentDepth = Math.min((pass + 1) * stepdown, depth);
+    const zLevel = center.z - currentDepth;
+    
+    // Plunge to depth
+    if (pass === 0) {
+      points.push(new THREE.Vector3(center.x, center.y, zLevel));
+    }
+    
+    // Trochoidal milling pattern
+    const maxRadius = Math.min(width, length) / 2 - toolDiameter / 2;
+    const trochoidRadius = toolDiameter * 0.15;
+    
+    for (let angle = 0; angle < Math.PI * 6; angle += 0.3) {
+      const spiralRadius = maxRadius * (1 - angle / (Math.PI * 6));
+      const mainX = center.x + Math.cos(angle) * spiralRadius;
+      const mainY = center.y + Math.sin(angle) * spiralRadius;
+      
+      // Add trochoidal motion
+      const trochX = mainX + Math.cos(angle * 8) * trochoidRadius;
+      const trochY = mainY + Math.sin(angle * 8) * trochoidRadius;
+      
+      points.push(new THREE.Vector3(trochX, trochY, zLevel));
+    }
+    
+    // Move to next level if needed
+    if (pass < numPasses - 1) {
+      points.push(new THREE.Vector3(center.x, center.y, center.z + retractHeight));
+    }
+  }
+  
+  // Final retract
+  points.push(new THREE.Vector3(center.x, center.y, center.z + safeHeight));
+  
+  return points;
+}
+
+// Generate contour finishing toolpath
+function generatePocketFinishingToolpath(
+  feature: any, 
+  toolDiameter: number, 
+  safeHeight: number, 
+  retractHeight: number
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const width = feature.dimensions.width || 20;
+  const length = feature.dimensions.length || 20;
+  const depth = feature.dimensions.depth || 10;
+  const center = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  
+  // Use boundary vertices if available
+  let boundary: THREE.Vector3[] = [];
+  if (feature.boundaryVertices && feature.boundaryVertices.length > 0) {
+    boundary = feature.boundaryVertices.map((v: THREE.Vector3) => v.clone());
+  } else {
+    // Generate rectangular boundary
+    const halfWidth = width / 2 - toolDiameter / 2;
+    const halfLength = length / 2 - toolDiameter / 2;
+    boundary = [
+      new THREE.Vector3(center.x - halfWidth, center.y - halfLength, center.z),
+      new THREE.Vector3(center.x + halfWidth, center.y - halfLength, center.z),
+      new THREE.Vector3(center.x + halfWidth, center.y + halfLength, center.z),
+      new THREE.Vector3(center.x - halfWidth, center.y + halfLength, center.z)
+    ];
+  }
+  
+  const finalDepth = center.z - depth;
+  
+  // Rapid to start
+  points.push(new THREE.Vector3(boundary[0].x, boundary[0].y, center.z + safeHeight));
+  points.push(new THREE.Vector3(boundary[0].x, boundary[0].y, center.z + retractHeight));
+  
+  // Plunge to depth
+  points.push(new THREE.Vector3(boundary[0].x, boundary[0].y, finalDepth));
+  
+  // Follow boundary contour
+  boundary.forEach(vertex => {
+    points.push(new THREE.Vector3(vertex.x, vertex.y, finalDepth));
+  });
+  
+  // Close the loop
+  points.push(new THREE.Vector3(boundary[0].x, boundary[0].y, finalDepth));
+  
+  // Retract
+  points.push(new THREE.Vector3(boundary[0].x, boundary[0].y, center.z + safeHeight));
+  
+  return points;
+}
+
+// Generate drilling toolpath with peck cycle
+function generateDrillingToolpath(
+  feature: any, 
+  toolDiameter: number, 
+  safeHeight: number, 
+  retractHeight: number
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const diameter = feature.dimensions.diameter || toolDiameter;
+  const depth = feature.dimensions.depth || diameter * 2;
+  const center = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  
+  const peckDepth = Math.min(toolDiameter * 3, depth / 3); // Conservative peck depth
+  const numPecks = Math.ceil(depth / peckDepth);
+  
+  // Rapid to position
+  points.push(new THREE.Vector3(center.x, center.y, center.z + safeHeight));
+  points.push(new THREE.Vector3(center.x, center.y, center.z + retractHeight));
+  
+  // Peck drilling cycle
+  for (let peck = 0; peck < numPecks; peck++) {
+    const targetDepth = Math.min((peck + 1) * peckDepth, depth);
+    const drillZ = center.z - targetDepth;
+    
+    // Drill down
+    points.push(new THREE.Vector3(center.x, center.y, drillZ));
+    
+    // Retract for chip evacuation (except on final peck)
+    if (peck < numPecks - 1) {
+      points.push(new THREE.Vector3(center.x, center.y, center.z + retractHeight));
+    }
+  }
+  
+  // Final retract
+  points.push(new THREE.Vector3(center.x, center.y, center.z + safeHeight));
+  
+  return points;
+}
+
+// Generate chamfer toolpath
+function generateChamferToolpath(
+  feature: any, 
+  toolDiameter: number, 
+  safeHeight: number, 
+  retractHeight: number
+): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const chamferWidth = feature.dimensions.width || 2;
+  const diameter = feature.dimensions.diameter || 20;
+  const center = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  
+  const radius = diameter / 2;
+  const numPoints = 32;
+  
+  // Generate circular chamfer path
+  for (let i = 0; i <= numPoints; i++) {
+    const angle = (i / numPoints) * Math.PI * 2;
+    const x = center.x + Math.cos(angle) * radius;
+    const y = center.y + Math.sin(angle) * radius;
+    const z = center.z - chamferWidth;
+    
+    if (i === 0) {
+      // Rapid to start
+      points.push(new THREE.Vector3(x, y, center.z + safeHeight));
+      points.push(new THREE.Vector3(x, y, center.z + retractHeight));
+    }
+    
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  
+  // Retract
+  const lastPoint = points[points.length - 1];
+  points.push(new THREE.Vector3(lastPoint.x, lastPoint.y, center.z + safeHeight));
+  
+  return points;
+}
+
+// Simple fallback toolpath for when detailed geometry isn't available
 function generateFallbackToolpath(operation: any): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
-  const feature = operation.feature;
-  const featurePos = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
+  const center = new THREE.Vector3(0, 0, 0);
   
-  // Simple fallback patterns
-  switch (operation.type) {
-    case 'drilling':
-      points.push(
-        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 5),
-        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z - (feature.dimensions.depth || 10)),
-        new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 5)
-      );
-      break;
-    default:
-      // Simple rectangular pattern
-      const size = (feature.dimensions.width || 20) / 2;
-      for (let i = 0; i < 10; i++) {
-        const angle = (i / 10) * Math.PI * 2;
-        points.push(new THREE.Vector3(
-          featurePos.x + Math.cos(angle) * size,
-          featurePos.y + Math.sin(angle) * size,
-          featurePos.z - 2
-        ));
-      }
+  // Generate a basic spiral pattern
+  const numPoints = 30;
+  const maxRadius = 20;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const angle = t * Math.PI * 4; // 2 full rotations
+    const radius = maxRadius * (1 - t); // Spiral inward
+    
+    const x = center.x + Math.cos(angle) * radius;
+    const y = center.y + Math.sin(angle) * radius;
+    const z = center.z - t * 15; // Descend 15mm
+    
+    points.push(new THREE.Vector3(x, y, z));
   }
   
   return points;
 }
 
+// Calculate realistic duration for each operation based on actual geometry
 function getDurationForOperation(operation: any): number {
   const feature = operation.feature;
-  const volume = calculateFeatureVolume(feature);
+  const tool = operation.tool;
   
-  // Realistic material removal rates (mm³/min)
-  const materialRemovalRates = {
-    'roughing': 800,    // High removal rate
-    'finishing': 200,   // Lower removal rate for quality
-    'drilling': 300,    // Moderate rate
-    'chamfering': 150   // Slow for precision
-  };
+  if (!feature) return 2;
   
-  const rate = materialRemovalRates[operation.type] || 400;
-  const baseMachiningTime = volume / rate;
+  let duration = 0;
+  const toolDiameter = tool?.diameter || 10;
   
-  // Add realistic factors
-  const setupTime = 3; // 3 minutes setup per operation
-  const toolChangeTime = 1.5; // Tool change time
-  const safetyMargin = 1.8; // 80% extra time for safety
-  const rapidTraverseTime = 0.5; // Time for rapid moves
+  switch (operation.type) {
+    case 'roughing':
+      // Calculate based on material removal volume and rates
+      const volume = calculateFeatureVolume(feature);
+      const materialRemovalRate = 2.5; // cm³/min for aluminum
+      const roughingEfficiency = 0.7; // Account for stepover/stepdown
+      duration = (volume / materialRemovalRate) / roughingEfficiency;
+      break;
+      
+    case 'finishing':
+      // Based on cutting length and feedrate
+      const perimeter = calculateFeaturePerimeter(feature);
+      const finishingFeedrate = toolDiameter * 0.1; // mm/tooth * flutes * RPM
+      const spindleSpeed = Math.min(3000, 150000 / toolDiameter);
+      const actualFeedrate = finishingFeedrate * 2 * spindleSpeed; // 2 flutes
+      duration = perimeter / actualFeedrate; // minutes
+      break;
+      
+    case 'drilling':
+      const diameter = feature.dimensions.diameter || toolDiameter;
+      const depth = feature.dimensions.depth || diameter * 2;
+      const drillingFeedrate = 0.05 * diameter; // mm/rev
+      const drillSpindleSpeed = Math.min(2000, 100000 / diameter);
+      const pecks = Math.ceil(depth / (diameter * 3)); // Peck drilling
+      const totalDepth = depth * (1 + pecks * 0.3); // Account for retracts
+      duration = totalDepth / (drillingFeedrate * drillSpindleSpeed / 60) + pecks * 0.1;
+      break;
+      
+    case 'chamfering':
+      const chamferLength = calculateFeaturePerimeter(feature);
+      const chamferFeedrate = 500; // mm/min for chamfering
+      duration = chamferLength / chamferFeedrate + 0.5; // Add setup time
+      break;
+      
+    default:
+      duration = 2;
+  }
   
-  return (baseMachiningTime + setupTime + toolChangeTime + rapidTraverseTime) * safetyMargin;
+  // Add realistic overhead: tool approach, safety checks, etc.
+  duration += 0.5;
+  
+  // Realistic operation time range: 0.5 to 25 minutes
+  return Math.max(0.5, Math.min(25, duration));
 }
 
+// Enhanced volume calculation with realistic dimensions
 function calculateFeatureVolume(feature: any): number {
+  if (!feature || !feature.dimensions) return 1; // Default 1 cm³
+  
   switch (feature.type) {
-    case 'hole':
-      const radius = (feature.dimensions.diameter || 6) / 2;
-      const depth = feature.dimensions.depth || 10;
-      return Math.PI * radius * radius * depth;
     case 'pocket':
-      return (feature.dimensions.width || 20) * 
-             (feature.dimensions.length || 20) * 
-             (feature.dimensions.depth || 5);
+      const width = feature.dimensions.width || 20;
+      const length = feature.dimensions.length || 20;
+      const depth = feature.dimensions.depth || 10;
+      return (width * length * depth) / 1000; // mm³ to cm³
+      
+    case 'hole':
+      const diameter = feature.dimensions.diameter || 10;
+      const holeDepth = feature.dimensions.depth || diameter * 2.5;
+      const radius = diameter / 2;
+      return (Math.PI * radius * radius * holeDepth) / 1000;
+      
     case 'slot':
-      return (feature.dimensions.width || 10) * 
-             (feature.dimensions.length || 30) * 
-             (feature.dimensions.depth || 5);
+      const slotLength = feature.dimensions.length || 30;
+      const slotWidth = feature.dimensions.width || 10;
+      const slotDepth = feature.dimensions.depth || 8;
+      return (slotLength * slotWidth * slotDepth) / 1000;
+      
+    case 'step':
+      const stepWidth = feature.dimensions.width || 25;
+      const stepLength = feature.dimensions.length || 25;
+      const stepDepth = feature.dimensions.depth || 5;
+      return (stepWidth * stepLength * stepDepth) / 1000;
+      
+    case 'chamfer':
+      // Chamfer volume is small - just the material removed
+      const chamferSize = feature.dimensions.width || 2;
+      const chamferPerimeter = calculateFeaturePerimeter(feature);
+      return (chamferPerimeter * chamferSize * chamferSize * 0.5) / 1000;
+      
     default:
-      return 1000; // Default volume
+      return 2; // Default 2 cm³
   }
 }
 
-// Helper functions for advanced toolpath generation
-function calculateFeatureBounds(vertices: THREE.Vector3[]) {
-  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+// Enhanced perimeter calculation
+function calculateFeaturePerimeter(feature: any): number {
+  if (!feature || !feature.dimensions) return 50; // Default 50mm
   
-  vertices.forEach(vertex => {
-    min.min(vertex);
-    max.max(vertex);
-  });
-  
-  return { min, max };
-}
-
-function isPointInFeature(point: THREE.Vector3, feature: any): boolean {
-  // Simple point-in-polygon test (2D projection)
-  const featureCenter = new THREE.Vector3(feature.position.x, feature.position.y, feature.position.z);
-  const distance = point.distanceTo(featureCenter);
-  const maxDistance = Math.max(feature.dimensions.width || 20, feature.dimensions.length || 20) / 2;
-  
-  return distance <= maxDistance;
-}
-
-function offsetBoundary2D(vertices: THREE.Vector3[], offset: number): THREE.Vector3[] {
-  // Simple offset implementation - in production, use proper offset algorithms
-  const center = vertices.reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(vertices.length);
-  
-  return vertices.map(vertex => {
-    const direction = new THREE.Vector3().subVectors(vertex, center).normalize();
-    return vertex.clone().add(direction.multiplyScalar(offset));
-  });
+  switch (feature.type) {
+    case 'pocket':
+      const width = feature.dimensions.width || 20;
+      const length = feature.dimensions.length || 20;
+      return 2 * (width + length);
+      
+    case 'hole':
+      const diameter = feature.dimensions.diameter || 10;
+      return Math.PI * diameter;
+      
+    case 'slot':
+      const slotLength = feature.dimensions.length || 30;
+      const slotWidth = feature.dimensions.width || 10;
+      // Slot perimeter is 2 lengths + 2 semicircles (width)
+      return 2 * slotLength + Math.PI * slotWidth;
+      
+    case 'step':
+      const stepWidth = feature.dimensions.width || 25;
+      const stepLength = feature.dimensions.length || 25;
+      return 2 * (stepWidth + stepLength);
+      
+    case 'chamfer':
+      // Assume chamfer around a circular or rectangular feature
+      if (feature.dimensions.diameter) {
+        return Math.PI * feature.dimensions.diameter;
+      } else {
+        const chamferWidth = feature.dimensions.width || 20;
+        const chamferLength = feature.dimensions.length || chamferWidth;
+        return 2 * (chamferWidth + chamferLength);
+      }
+      
+    default:
+      return 60; // Default perimeter
+  }
 }
