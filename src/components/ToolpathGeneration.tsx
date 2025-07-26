@@ -6,9 +6,9 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import * as THREE from 'three';
-import { MaterialRemovalSimulation } from './MaterialRemovalSimulation';
-import { ProductionToolpathGenerator, FeatureGeometry } from './ProductionToolpathGenerator';
-import { AdvancedFeature } from './AdvancedFeatureAnalyzer';
+import { RealisticSimulation } from './RealisticSimulation';
+import { ProfessionalToolpathGenerator } from './ProfessionalToolpathGenerator';
+import { MachinableFeature } from './AdvancedSTLAnalyzer';
 import { 
   Play, 
   Pause, 
@@ -26,7 +26,7 @@ interface ToolpathGenerationProps {
   onSimulationComplete: (results: any) => void;
   uploadedFile?: File;
   analysisResults?: any;
-  detectedFeatures?: AdvancedFeature[];
+  detectedFeatures?: MachinableFeature[];
   originalGeometry?: THREE.BufferGeometry;
 }
 
@@ -65,37 +65,46 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
         setGenerationProgress(((i + 1) / stages.length) * 100);
       }
 
-      // Generate production-ready operations
+      // Generate professional machining operations
       if (detectedFeatures && detectedFeatures.length > 0) {
-        const stockBounds = new THREE.Box3(
+        // Calculate stock bounds from actual geometry
+        let stockBounds = new THREE.Box3(
           new THREE.Vector3(-50, -50, -25),
           new THREE.Vector3(50, 50, 25)
         );
         
-        const generator = new ProductionToolpathGenerator(stockBounds);
-        const features: FeatureGeometry[] = detectedFeatures.map(f => ({
-          type: f.type,
-          dimensions: f.dimensions,
-          position: f.position,
-          boundaryVertices: f.boundaryVertices,
-          surfaceNormal: f.surfaceNormal
-        }));
+        if (originalGeometry) {
+          originalGeometry.computeBoundingBox();
+          const bbox = originalGeometry.boundingBox!;
+          const size = new THREE.Vector3();
+          bbox.getSize(size);
+          
+          // Add 10% stock allowance
+          const margin = size.clone().multiplyScalar(0.1);
+          stockBounds = new THREE.Box3(
+            bbox.min.clone().sub(margin),
+            bbox.max.clone().add(margin)
+          );
+        }
         
-        const productionOps = generator.generateOperations(features, toolAssignments);
+        const generator = new ProfessionalToolpathGenerator(stockBounds);
+        const productionOps = generator.generateMachiningProgram(detectedFeatures);
         
-        // Convert to display format
+        // Convert to display format with enhanced information
         const displayOps = productionOps.map(op => ({
           id: op.id,
           type: op.type.charAt(0).toUpperCase() + op.type.slice(1),
-          feature: `${op.feature.type.toUpperCase()} - ${Object.entries(op.feature.dimensions).map(([k,v]) => `${k}:${v}mm`).join(', ')}`,
+          feature: `${op.feature.type.toUpperCase()} - ${Object.entries(op.feature.dimensions).map(([k,v]) => `${k}:${Number(v).toFixed(1)}mm`).join(', ')}`,
           tool: op.tool.id,
-          strategy: getStrategyName(op.type),
-          stepdown: op.parameters.axialDepth,
-          stepover: op.parameters.radialDepth,
+          strategy: getOperationStrategy(op),
+          stepdown: op.parameters.axialDepthOfCut.toFixed(2),
+          stepover: op.parameters.radialDepthOfCut.toFixed(2),
           feedrate: Math.round(op.parameters.feedrate),
           spindle: Math.round(op.parameters.spindleSpeed),
           estimatedTime: `${op.estimatedTime.toFixed(1)} min`,
           status: "generated",
+          qualityGrade: op.qualityGrade,
+          priority: op.priority,
           _productionData: op // Store for simulation
         }));
         
@@ -109,13 +118,15 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
     }
   };
 
-  const getStrategyName = (type: string) => {
-    switch (type) {
-      case 'roughing': return 'Adaptive Clearing';
-      case 'finishing': return 'Contour Finishing';
+  const getOperationStrategy = (operation: any) => {
+    switch (operation.type) {
+      case 'roughing': return 'Adaptive Trochoidal';
+      case 'semi_finishing': return 'Contour Parallel';
+      case 'finishing': return 'Precision Contour';
       case 'drilling': return 'Peck Drilling';
       case 'chamfering': return 'Chamfer Profile';
-      default: return 'Standard';
+      case 'profiling': return 'External Profile';
+      default: return 'Standard Strategy';
     }
   };
 
@@ -349,13 +360,12 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                 </div>
 
                 <div className="h-[600px]">
-                  <MaterialRemovalSimulation 
+                  <RealisticSimulation 
                     operations={operations.map(op => op._productionData).filter(Boolean)}
                     originalGeometry={originalGeometry}
-                    detectedFeatures={detectedFeatures}
                     onSimulationComplete={() => {
                       const totalFeatures = toolAssignments.length;
-                      const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
+                      const uniqueTools = new Set(operations.map(op => op._productionData?.tool?.id || 'default')).size;
                       const estimatedTime = operations.reduce((sum, op) => {
                         const minutes = parseFloat(op.estimatedTime.split(' ')[0]);
                         return sum + minutes;
@@ -365,27 +375,34 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                       const actualTime = estimatedTime + setupTime;
 
                       const totalVolume = operations.reduce((sum, op) => {
-                        if (op._productionData?.feature) {
-                          return sum + calculateFeatureVolume(op._productionData.feature);
+                        if (op._productionData?.materialRemovalRate) {
+                          return sum + (op._productionData.materialRemovalRate * op._productionData.estimatedTime);
                         }
-                        return sum + 2; // Default volume
+                        return sum + calculateFeatureVolume(op._productionData?.feature || {});
+                      }, 0);
+
+                      const totalDistance = operations.reduce((sum, op) => {
+                        if (op._productionData?.toolpath) {
+                          return sum + op._productionData.toolpath.length * 2; // Approximate distance
+                        }
+                        return sum + 100; // Default distance
                       }, 0);
 
                       const results = {
                         totalTime: `${actualTime.toFixed(1)} minutes`,
                         machiningTime: estimatedTime.toFixed(1),
-                        setupTime: setupTime,
+                        setupTime: setupTime.toFixed(1),
                         toolChanges: uniqueTools,
-                        operations: totalFeatures,
-                        totalDistance: (estimatedTime * 120 + Math.random() * 500).toFixed(1),
+                        operations: operations.length,
+                        totalDistance: `${totalDistance.toFixed(1)} mm`,
                         materialRemoved: `${totalVolume.toFixed(1)} cm³`,
                         quality: actualTime < 35 ? "Excellent" : actualTime < 65 ? "Good" : "Fair",
                         warnings: uniqueTools > 5 ? 2 : actualTime > 60 ? 1 : 0,
                         gcode: {
-                          lines: Math.floor(totalFeatures * 1200 + estimatedTime * 85),
-                          size: (totalFeatures * 55 + estimatedTime * 4.8).toFixed(1) + " KB"
+                          lines: Math.floor(operations.length * 1500 + estimatedTime * 120),
+                          size: (operations.length * 65 + estimatedTime * 5.2).toFixed(1) + " KB"
                         },
-                        efficiency: Math.min(95, Math.max(65, 85 - (actualTime - 25) / 3))
+                        efficiency: Math.min(95, Math.max(65, 85 - Math.max(0, (actualTime - 25) / 3)))
                       };
 
                       onSimulationComplete(results);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AdvancedSTLAnalyzer, MachinableFeature } from './AdvancedSTLAnalyzer';
 
 interface Feature {
   id: string;
@@ -42,6 +43,7 @@ interface AnalysisResults {
   estimatedTime: string;
   timestamp: string;
   originalGeometry?: THREE.BufferGeometry;
+  machinableFeatures?: MachinableFeature[];
 }
 
 export class STLFeatureAnalyzer {
