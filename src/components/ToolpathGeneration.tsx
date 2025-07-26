@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
-import { MaterialRemovalSimulation } from './MaterialRemovalSimulation';
+import * as THREE from 'three';
+import { StepByStepSimulation } from './StepByStepSimulation';
+import { ProductionToolpathGenerator, FeatureGeometry } from './ProductionToolpathGenerator';
 import { 
   Play, 
   Pause, 
@@ -23,9 +25,11 @@ interface ToolpathGenerationProps {
   onSimulationComplete: (results: any) => void;
   uploadedFile?: File;
   analysisResults?: any;
+  detectedFeatures?: any[];
+  originalGeometry?: THREE.BufferGeometry;
 }
 
-const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFile, analysisResults }: ToolpathGenerationProps) => {
+const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFile, analysisResults, detectedFeatures, originalGeometry }: ToolpathGenerationProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -34,60 +38,7 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
   const [feedrateOverride, setFeedrateOverride] = useState([100]);
   const [spindleOverride, setSpindleOverride] = useState([100]);
 
-  const [operations] = useState([
-    {
-      id: "OP001",
-      type: "Roughing",
-      feature: "Pocket P001",
-      tool: "12mm 4-Flute End Mill",
-      strategy: "Adaptive Clearing",
-      stepdown: 3,
-      stepover: 6,
-      feedrate: 1200,
-      spindle: 2400,
-      estimatedTime: "18 min",
-      status: "generated"
-    },
-    {
-      id: "OP002", 
-      type: "Finishing",
-      feature: "Pocket P001",
-      tool: "12mm 4-Flute End Mill", 
-      strategy: "Parallel Finishing",
-      stepdown: 0.5,
-      stepover: 1.2,
-      feedrate: 800,
-      spindle: 2400,
-      estimatedTime: "12 min",
-      status: "generated"
-    },
-    {
-      id: "OP003",
-      type: "Drilling",
-      feature: "Holes H001-H002",
-      tool: "6mm HSS Drill",
-      strategy: "Peck Drilling",
-      stepdown: 2,
-      stepover: 0,
-      feedrate: 180,
-      spindle: 2400,
-      estimatedTime: "8 min",
-      status: "generated"
-    },
-    {
-      id: "OP004",
-      type: "Chamfering", 
-      feature: "Chamfer C001",
-      tool: "45° Chamfer Mill",
-      strategy: "Chamfer Profile",
-      stepdown: 1,
-      stepover: 0,
-      feedrate: 500,
-      spindle: 5000,
-      estimatedTime: "5 min",
-      status: "generated"
-    }
-  ]);
+  const [operations, setOperations] = useState<any[]>([]);
 
   const generateToolpaths = async () => {
     setIsGenerating(true);
@@ -113,10 +64,57 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
         setGenerationProgress(((i + 1) / stages.length) * 100);
       }
 
+      // Generate production-ready operations
+      if (detectedFeatures && detectedFeatures.length > 0) {
+        const stockBounds = new THREE.Box3(
+          new THREE.Vector3(-50, -50, -25),
+          new THREE.Vector3(50, 50, 25)
+        );
+        
+        const generator = new ProductionToolpathGenerator(stockBounds);
+        const features: FeatureGeometry[] = detectedFeatures.map(f => ({
+          type: f.type,
+          dimensions: f.dimensions,
+          position: f.position,
+          boundaryVertices: f.boundaryVertices,
+          surfaceNormal: f.surfaceNormal
+        }));
+        
+        const productionOps = generator.generateOperations(features, toolAssignments);
+        
+        // Convert to display format
+        const displayOps = productionOps.map(op => ({
+          id: op.id,
+          type: op.type.charAt(0).toUpperCase() + op.type.slice(1),
+          feature: `${op.feature.type.toUpperCase()} - ${Object.entries(op.feature.dimensions).map(([k,v]) => `${k}:${v}mm`).join(', ')}`,
+          tool: op.tool.id,
+          strategy: getStrategyName(op.type),
+          stepdown: op.parameters.axialDepth,
+          stepover: op.parameters.radialDepth,
+          feedrate: Math.round(op.parameters.feedrate),
+          spindle: Math.round(op.parameters.spindleSpeed),
+          estimatedTime: `${op.estimatedTime.toFixed(1)} min`,
+          status: "generated",
+          _productionData: op // Store for simulation
+        }));
+        
+        setOperations(displayOps);
+      }
+
       setIsGenerating(false);
     } catch (error) {
       console.error('Toolpath generation failed:', error);
       setIsGenerating(false);
+    }
+  };
+
+  const getStrategyName = (type: string) => {
+    switch (type) {
+      case 'roughing': return 'Adaptive Clearing';
+      case 'finishing': return 'Contour Finishing';
+      case 'drilling': return 'Peck Drilling';
+      case 'chamfering': return 'Chamfer Profile';
+      default: return 'Standard';
     }
   };
 
@@ -326,21 +324,14 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                 </div>
 
                 <div className="h-[600px]">
-                  <MaterialRemovalSimulation 
-                    operations={operations.map(op => ({
-                      id: op.id,
-                      type: op.type.toLowerCase() as 'roughing' | 'finishing' | 'drilling' | 'chamfering',
-                      name: op.id + ' - ' + op.type,
-                      tool: op.tool,
-                      feature: op.feature,
-                      duration: parseInt(op.estimatedTime.split(' ')[0]) / 10, // Scale down for demo
-                      toolpath: []
-                    }))}
-                    onSimulationComplete={() => {
+                  <StepByStepSimulation 
+                    operations={operations.map(op => op._productionData).filter(Boolean)}
+                    originalGeometry={originalGeometry}
+                    onComplete={() => {
                       const totalFeatures = toolAssignments.length;
                       const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
                       const estimatedTime = operations.reduce((sum, op) => {
-                        const minutes = parseInt(op.estimatedTime.split(' ')[0]);
+                        const minutes = parseFloat(op.estimatedTime.split(' ')[0]);
                         return sum + minutes;
                       }, 0);
 
@@ -348,8 +339,8 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                       const actualTime = estimatedTime + setupTime;
 
                       const results = {
-                        totalTime: `${actualTime} minutes`,
-                        machiningTime: estimatedTime,
+                        totalTime: `${actualTime.toFixed(1)} minutes`,
+                        machiningTime: estimatedTime.toFixed(1),
                         setupTime: setupTime,
                         toolChanges: uniqueTools,
                         operations: totalFeatures,

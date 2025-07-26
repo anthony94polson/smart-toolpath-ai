@@ -144,6 +144,8 @@ const Workspace = () => {
               onSimulationComplete={handleSimulationComplete}
               uploadedFile={uploadedFile}
               analysisResults={analysisResults}
+              detectedFeatures={analyzedFeatures}
+              originalGeometry={analysisResults?.originalGeometry}
             />
           )}
           
