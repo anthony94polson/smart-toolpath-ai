@@ -3,6 +3,7 @@ import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei
 import { Suspense, useMemo, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import StepLoader from './StepLoader';
+import STLLoaderComponent from './STLLoader';
 
 interface Model3DViewerProps {
   features: Array<{
@@ -20,11 +21,18 @@ interface Model3DViewerProps {
 
 const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisResults, uploadedFile }: Model3DViewerProps) => {
   const [loadedGeometries, setLoadedGeometries] = useState<THREE.BufferGeometry[]>([]);
+  const [stlGeometry, setStlGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [loadingError, setLoadingError] = useState<string>('');
 
   const handleGeometryLoaded = useCallback((geometries: THREE.BufferGeometry[]) => {
     console.log('Model3DViewer: Received geometries:', geometries.length);
     setLoadedGeometries(geometries);
+    setLoadingError('');
+  }, []);
+
+  const handleSTLGeometryLoaded = useCallback((geometry: THREE.BufferGeometry) => {
+    console.log('Model3DViewer: Received STL geometry');
+    setStlGeometry(geometry);
     setLoadingError('');
   }, []);
 
@@ -169,17 +177,28 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
       {uploadedFile && (
         <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-xs z-10">
           File: {uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)}KB)
-          <br />Geometries: {loadedGeometries.length}
+          <br />Type: {uploadedFile.name.toLowerCase().endsWith('.stl') ? 'STL (Real Model)' : 'STEP (Mock)'}
+          <br />Geometries: {stlGeometry ? '1 (STL)' : loadedGeometries.length}
         </div>
       )}
       
-      {/* STEP File Loader */}
+      {/* File Loaders */}
       {uploadedFile && (
-        <StepLoader
-          file={uploadedFile}
-          onGeometryLoaded={handleGeometryLoaded}
-          onError={handleLoadError}
-        />
+        <>
+          {uploadedFile.name.toLowerCase().endsWith('.stl') ? (
+            <STLLoaderComponent
+              file={uploadedFile}
+              onGeometryLoaded={handleSTLGeometryLoaded}
+              onError={handleLoadError}
+            />
+          ) : (
+            <StepLoader
+              file={uploadedFile}
+              onGeometryLoaded={handleGeometryLoaded}
+              onError={handleLoadError}
+            />
+          )}
+        </>
       )}
       
       <Canvas>
@@ -195,8 +214,16 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           {/* Environment */}
           <Environment preset="studio" />
           
-          {/* Main part geometries from STEP file */}
-          {loadedGeometries.map((geometry, index) => (
+          {/* Real STL geometry (if available) */}
+          {stlGeometry && (
+            <mesh position={[0, 0, 0]}>
+              <primitive object={stlGeometry} />
+              <primitive object={partMaterial} />
+            </mesh>
+          )}
+          
+          {/* STEP mock geometries (if no STL) */}
+          {!stlGeometry && loadedGeometries.map((geometry, index) => (
             <mesh key={index} position={index === 0 ? [0, 0, 0] : [Math.random() * 20 - 10, Math.random() * 20 - 10, Math.random() * 10]}>
               <primitive object={geometry} />
               <primitive object={partMaterial} />
@@ -204,7 +231,7 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           ))}
           
           {/* Fallback if no geometries loaded */}
-          {loadedGeometries.length === 0 && (
+          {!stlGeometry && loadedGeometries.length === 0 && (
             <mesh position={[0, 0, 0]}>
               <boxGeometry args={[120, 80, 25]} />
               <primitive object={partMaterial} />

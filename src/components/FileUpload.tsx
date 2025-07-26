@@ -23,7 +23,8 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     const files = Array.from(e.dataTransfer.files);
     const stepFile = files.find(file => 
       file.name.toLowerCase().endsWith('.step') || 
-      file.name.toLowerCase().endsWith('.stp')
+      file.name.toLowerCase().endsWith('.stp') ||
+      file.name.toLowerCase().endsWith('.stl')
     );
     
     if (stepFile) {
@@ -31,7 +32,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     } else {
       toast({
         title: "Invalid file type",
-        description: "Please upload a STEP (.step or .stp) file",
+        description: "Please upload a STEP (.step/.stp) or STL (.stl) file",
         variant: "destructive"
       });
     }
@@ -51,8 +52,10 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
 
     try {
       // Validate file type
-      if (!file.name.toLowerCase().endsWith('.step') && !file.name.toLowerCase().endsWith('.stp')) {
-        throw new Error('Invalid file type. Please upload a STEP (.step or .stp) file.');
+      if (!file.name.toLowerCase().endsWith('.step') && 
+          !file.name.toLowerCase().endsWith('.stp') && 
+          !file.name.toLowerCase().endsWith('.stl')) {
+        throw new Error('Invalid file type. Please upload a STEP (.step/.stp) or STL (.stl) file.');
       }
 
       // Realistic file processing simulation
@@ -125,9 +128,9 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
   return (
     <Card className="p-8">
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold mb-2">Upload STEP File</h2>
+        <h2 className="text-2xl font-bold mb-2">Upload 3D File</h2>
         <p className="text-muted-foreground">
-          Drag and drop your STEP file or click to browse
+          Drag and drop your STEP or STL file or click to browse
         </p>
       </div>
 
@@ -145,10 +148,10 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
         >
           <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
           <p className="text-lg font-medium mb-2">
-            Drop your STEP file here
+            Drop your 3D file here
           </p>
           <p className="text-muted-foreground mb-4">
-            Supports .step and .stp files up to 100MB
+            Supports .step, .stp, and .stl files up to 100MB
           </p>
           <Button onClick={() => document.getElementById('file-input')?.click()}>
             Browse Files
@@ -156,7 +159,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
           <input
             id="file-input"
             type="file"
-            accept=".step,.stp"
+            accept=".step,.stp,.stl"
             onChange={handleFileInput}
             className="hidden"
           />
