@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Filter, Wrench, Settings, CheckCircle } from "lucide-react";
+import { Search, Filter, Wrench, Settings, CheckCircle, Zap } from "lucide-react";
 
 interface Tool {
   id: string;
@@ -145,6 +145,43 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
     }));
   };
 
+  const handleAutoSelectTools = () => {
+    // Group features by type for better tool optimization
+    const featuresByType = selectedFeatures.reduce((acc: Record<string, any[]>, feature: any) => {
+      if (!acc[feature.type]) acc[feature.type] = [];
+      acc[feature.type].push(feature);
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    // Find tools that can handle multiple feature types
+    const versatileTools = tools.filter(tool => tool.compatibility.length > 1);
+    const assignments: Record<string, string> = {};
+
+    // Priority order: try to use versatile tools first to minimize tool count
+    Object.entries(featuresByType).forEach(([featureType, features]: [string, any[]]) => {
+      // Look for a versatile tool that can handle this feature type
+      let selectedTool = versatileTools.find(tool => 
+        tool.compatibility.includes(featureType) && tool.inStock
+      );
+
+      // If no versatile tool available, use the best specific tool
+      if (!selectedTool) {
+        selectedTool = tools.find(tool => 
+          tool.compatibility.includes(featureType) && tool.inStock
+        ) || tools.find(tool => tool.compatibility.includes(featureType));
+      }
+
+      // Assign this tool to all features of this type
+      if (selectedTool) {
+        features.forEach((feature: any) => {
+          assignments[feature.id] = selectedTool!.id;
+        });
+      }
+    });
+
+    setToolAssignments(assignments);
+  };
+
   const handleProceedToToolpaths = () => {
     // Auto-assign tools if none selected
     if (Object.keys(toolAssignments).length === 0) {
@@ -247,7 +284,18 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Feature Assignment Panel */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Feature Assignment</h3>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Feature Assignment</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAutoSelectTools}
+                className="bg-gradient-primary text-white border-0 hover:shadow-medium"
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                Auto-Select Tools
+              </Button>
+            </div>
             {selectedFeatures.map((feature) => (
               <Card key={feature.id} className="p-4">
                 <div className="flex justify-between items-start mb-3">
@@ -367,6 +415,7 @@ const ToolLibrary = ({ selectedFeatures, onToolsAssigned }: ToolLibraryProps) =>
         <div className="flex justify-between items-center mt-6 pt-6 border-t">
           <div className="text-sm text-muted-foreground">
             <p>{Object.keys(toolAssignments).length} features assigned</p>
+            <p>Unique tools needed: {new Set(Object.values(toolAssignments)).size}</p>
             <p>Estimated tool cost: ${tools.filter(t => Object.values(toolAssignments).includes(t.id)).reduce((sum, t) => sum + t.cost, 0).toFixed(2)}</p>
           </div>
           <Button
