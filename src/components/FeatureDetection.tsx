@@ -25,6 +25,23 @@ interface FeatureDetectionProps {
 }
 
 const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, analyzedFeatures }: FeatureDetectionProps) => {
+  const getToolRecommendation = (feature: any): string => {
+    switch (feature.type) {
+      case 'hole':
+        return `${feature.dimensions.diameter}mm Drill`;
+      case 'pocket':
+        return `${Math.min(feature.dimensions.width, feature.dimensions.length) / 2}mm End Mill`;
+      case 'slot':
+        return `${feature.dimensions.width}mm End Mill`;
+      case 'chamfer':
+        return `${feature.dimensions.angle}° Chamfer Tool`;
+      case 'step':
+        return `${feature.dimensions.width / 2}mm End Mill`;
+      default:
+        return "General Purpose End Mill";
+    }
+  };
+
   // Convert analyzed features to the expected format
   const [features] = useState<Feature[]>(() => {
     if (analyzedFeatures && analyzedFeatures.length > 0) {
@@ -61,23 +78,6 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
       }
     ];
   });
-
-  const getToolRecommendation = (feature: any): string => {
-    switch (feature.type) {
-      case 'hole':
-        return `${feature.dimensions.diameter}mm Drill`;
-      case 'pocket':
-        return `${Math.min(feature.dimensions.width, feature.dimensions.length) / 2}mm End Mill`;
-      case 'slot':
-        return `${feature.dimensions.width}mm End Mill`;
-      case 'chamfer':
-        return `${feature.dimensions.angle}° Chamfer Tool`;
-      case 'step':
-        return `${feature.dimensions.width / 2}mm End Mill`;
-      default:
-        return "General Purpose End Mill";
-    }
-  };
 
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
 
