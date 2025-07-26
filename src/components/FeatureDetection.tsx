@@ -19,9 +19,10 @@ interface Feature {
 interface FeatureDetectionProps {
   analysisResults: any;
   onFeaturesSelected: (features: Feature[]) => void;
+  uploadedFile?: File;
 }
 
-const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetectionProps) => {
+const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile }: FeatureDetectionProps) => {
   const [features] = useState<Feature[]>([
     {
       id: "P001",
@@ -223,6 +224,7 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetect
                 selectedFeatures={selectedFeatures}
                 onFeatureClick={toggleFeatureSelection}
                 analysisResults={analysisResults}
+                uploadedFile={uploadedFile}
               />
               
               <div className="flex justify-center space-x-2 mt-4">

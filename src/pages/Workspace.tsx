@@ -121,6 +121,7 @@ const Workspace = () => {
             <FeatureDetection 
               analysisResults={analysisResults}
               onFeaturesSelected={handleFeaturesSelected}
+              uploadedFile={uploadedFile}
             />
           )}
           

@@ -1,7 +1,8 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment, Grid } from '@react-three/drei';
-import { Suspense, useMemo } from 'react';
+import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei';
+import { Suspense, useMemo, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import StepLoader from './StepLoader';
 
 interface Model3DViewerProps {
   features: Array<{
@@ -14,54 +15,25 @@ interface Model3DViewerProps {
   selectedFeatures: string[];
   onFeatureClick?: (featureId: string) => void;
   analysisResults?: any;
+  uploadedFile?: File;
 }
 
-const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisResults }: Model3DViewerProps) => {
-  // Generate realistic geometry based on uploaded file
-  const partGeometry = useMemo(() => {
-    if (!analysisResults?.geometry?.boundingBox) {
-      // Fallback to default if no analysis results
-      return new THREE.BoxGeometry(120, 80, 25);
-    }
+const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisResults, uploadedFile }: Model3DViewerProps) => {
+  const [loadedGeometries, setLoadedGeometries] = useState<THREE.BufferGeometry[]>([]);
+  const [loadingError, setLoadingError] = useState<string>('');
 
-    const { x, y, z } = analysisResults.geometry.boundingBox;
-    const width = parseFloat(x);
-    const height = parseFloat(y);
-    const depth = parseFloat(z);
+  const handleGeometryLoaded = useCallback((geometries: THREE.BufferGeometry[]) => {
+    setLoadedGeometries(geometries);
+    setLoadingError('');
+  }, []);
 
-    // Create a more complex geometry based on file characteristics
-    const fileName = analysisResults.fileName?.toLowerCase() || '';
-    const featureTypes = Object.keys(analysisResults.features || {});
-    
-    // Create base geometry
-    let geometry;
-    
-    if (fileName.includes('bracket') || fileName.includes('mount')) {
-      // L-shaped bracket - create using CSG-like approach
-      const mainBody = new THREE.BoxGeometry(width * 0.8, height, depth);
-      const verticalArm = new THREE.BoxGeometry(width * 0.3, height * 0.6, depth);
-      geometry = mainBody; // Use main body for now
-    } else if (fileName.includes('plate') || fileName.includes('flat')) {
-      // Thin plate
-      geometry = new THREE.BoxGeometry(width, height, Math.max(depth, 8));
-    } else if (fileName.includes('housing') || fileName.includes('case')) {
-      // Hollow housing - create with thicker walls
-      geometry = new THREE.BoxGeometry(width, height, depth);
-    } else if (fileName.includes('cylinder') || fileName.includes('shaft')) {
-      // Cylindrical part
-      geometry = new THREE.CylinderGeometry(width/3, width/3, height, 32);
-    } else if (featureTypes.includes('pocket') && featureTypes.includes('hole')) {
-      // Complex machined part - add some visual complexity
-      const complexGeometry = new THREE.BoxGeometry(width, height, depth);
-      // Add chamfers to edges (visual approximation)
-      geometry = complexGeometry;
-    } else {
-      // Standard rectangular part
-      geometry = new THREE.BoxGeometry(width, height, depth);
-    }
-    
-    return geometry;
-  }, [analysisResults]);
+  const handleLoadError = useCallback((error: string) => {
+    setLoadingError(error);
+    console.error('STEP loading error:', error);
+    // Fallback to basic geometry
+    const fallbackGeometry = new THREE.BoxGeometry(120, 80, 25);
+    setLoadedGeometries([fallbackGeometry]);
+  }, []);
 
   // Create material that shows the part more realistically
   const partMaterial = useMemo(() => {
@@ -191,6 +163,15 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
 
   return (
     <div className="w-full h-64 bg-muted rounded-lg overflow-hidden">
+      {/* STEP File Loader */}
+      {uploadedFile && (
+        <StepLoader
+          file={uploadedFile}
+          onGeometryLoaded={handleGeometryLoaded}
+          onError={handleLoadError}
+        />
+      )}
+      
       <Canvas>
         <Suspense fallback={null}>
           <PerspectiveCamera makeDefault position={[100, 100, 100]} />
@@ -204,11 +185,21 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           {/* Environment */}
           <Environment preset="studio" />
           
-          {/* Main part */}
-          <mesh position={[0, 0, 0]}>
-            <primitive object={partGeometry} />
-            <primitive object={partMaterial} />
-          </mesh>
+          {/* Main part geometries from STEP file */}
+          {loadedGeometries.map((geometry, index) => (
+            <mesh key={index} position={index === 0 ? [0, 0, 0] : [Math.random() * 20 - 10, Math.random() * 20 - 10, Math.random() * 10]}>
+              <primitive object={geometry} />
+              <primitive object={partMaterial} />
+            </mesh>
+          ))}
+          
+          {/* Fallback if no geometries loaded */}
+          {loadedGeometries.length === 0 && (
+            <mesh position={[0, 0, 0]}>
+              <boxGeometry args={[120, 80, 25]} />
+              <primitive object={partMaterial} />
+            </mesh>
+          )}
           
           {/* Features */}
           {features.map((feature) => (
@@ -220,6 +211,12 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           ))}
         </Suspense>
       </Canvas>
+      
+      {loadingError && (
+        <div className="absolute bottom-2 left-2 bg-destructive/90 text-destructive-foreground px-2 py-1 rounded text-xs">
+          {loadingError}
+        </div>
+      )}
     </div>
   );
 };
