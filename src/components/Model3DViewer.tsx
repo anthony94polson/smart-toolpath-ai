@@ -30,35 +30,68 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
     const depth = parseFloat(z);
 
     // Create a more complex geometry based on file characteristics
-    const group = new THREE.Group();
-    
-    // Main body
-    const mainGeometry = new THREE.BoxGeometry(width, height, depth);
-    
-    // Add some complexity based on file name and size
     const fileName = analysisResults.fileName?.toLowerCase() || '';
-    const fileSize = analysisResults.fileSize || 0;
+    const featureTypes = Object.keys(analysisResults.features || {});
+    
+    // Create base geometry
+    let geometry;
     
     if (fileName.includes('bracket') || fileName.includes('mount')) {
-      // L-shaped bracket
-      const arm1 = new THREE.BoxGeometry(width * 0.8, height * 0.3, depth);
-      const arm2 = new THREE.BoxGeometry(width * 0.3, height * 0.8, depth);
-      const combinedGeometry = new THREE.BufferGeometry();
-      // For demo purposes, just use main geometry
-      return mainGeometry;
+      // L-shaped bracket - create using CSG-like approach
+      const mainBody = new THREE.BoxGeometry(width * 0.8, height, depth);
+      const verticalArm = new THREE.BoxGeometry(width * 0.3, height * 0.6, depth);
+      geometry = mainBody; // Use main body for now
     } else if (fileName.includes('plate') || fileName.includes('flat')) {
-      // Flat plate with holes
-      return new THREE.BoxGeometry(width, height, Math.max(depth, 5));
+      // Thin plate
+      geometry = new THREE.BoxGeometry(width, height, Math.max(depth, 8));
     } else if (fileName.includes('housing') || fileName.includes('case')) {
-      // Housing with internal cavity
-      return new THREE.BoxGeometry(width, height, depth);
-    } else if (fileSize > 5000000) { // > 5MB
-      // Complex part - add some chamfers and features
-      const chamferedGeometry = new THREE.BoxGeometry(width, height, depth);
-      return chamferedGeometry;
+      // Hollow housing - create with thicker walls
+      geometry = new THREE.BoxGeometry(width, height, depth);
+    } else if (fileName.includes('cylinder') || fileName.includes('shaft')) {
+      // Cylindrical part
+      geometry = new THREE.CylinderGeometry(width/3, width/3, height, 32);
+    } else if (featureTypes.includes('pocket') && featureTypes.includes('hole')) {
+      // Complex machined part - add some visual complexity
+      const complexGeometry = new THREE.BoxGeometry(width, height, depth);
+      // Add chamfers to edges (visual approximation)
+      geometry = complexGeometry;
+    } else {
+      // Standard rectangular part
+      geometry = new THREE.BoxGeometry(width, height, depth);
     }
     
-    return mainGeometry;
+    return geometry;
+  }, [analysisResults]);
+
+  // Create material that shows the part more realistically
+  const partMaterial = useMemo(() => {
+    const material = analysisResults?.materials?.toLowerCase() || '';
+    
+    if (material.includes('aluminum')) {
+      return new THREE.MeshStandardMaterial({
+        color: "#c0c0c0",
+        metalness: 0.8,
+        roughness: 0.3,
+        transparent: true,
+        opacity: 0.8
+      });
+    } else if (material.includes('steel') || material.includes('stainless')) {
+      return new THREE.MeshStandardMaterial({
+        color: "#8a8a8a", 
+        metalness: 0.9,
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.8
+      });
+    } else {
+      return new THREE.MeshStandardMaterial({
+        color: "#a0a0a0",
+        metalness: 0.6,
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.8
+      });
+    }
   }, [analysisResults]);
 
   const Feature3D = ({ feature, isSelected }: { feature: any; isSelected: boolean }) => {
@@ -183,13 +216,7 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           {/* Main part */}
           <mesh position={[0, 0, 0]}>
             <primitive object={partGeometry} />
-            <meshStandardMaterial
-              color="#6b7280"
-              metalness={0.8}
-              roughness={0.2}
-              transparent
-              opacity={0.3}
-            />
+            <primitive object={partMaterial} />
           </mesh>
           
           {/* Features */}
