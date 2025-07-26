@@ -147,34 +147,6 @@ const Workspace = () => {
           )}
         </div>
 
-        {/* File Info Sidebar (when file is loaded) */}
-        {uploadedFile && currentStep !== "upload" && (
-          <div className="fixed bottom-4 right-4 w-80">
-            <div className="bg-card border border-border rounded-lg p-4 shadow-strong">
-              <h3 className="font-semibold mb-2">Current Project</h3>
-              <p className="text-sm font-medium">{uploadedFile.name}</p>
-              <p className="text-xs text-muted-foreground mb-3">
-                {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
-              </p>
-              {analysisResults && (
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between">
-                    <span>Features:</span>
-                    <span>{String(Object.values(analysisResults.features).reduce((a: number, b: unknown) => a + Number(b), 0))}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Volume:</span>
-                    <span>{analysisResults.geometry.volume} cm³</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Material:</span>
-                    <span>{analysisResults.materials[0]}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
