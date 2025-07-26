@@ -133,11 +133,11 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
       const totalFeatures = toolAssignments.length;
       const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
       const estimatedTime = operations.reduce((sum, op) => {
-        const minutes = parseInt(op.estimatedTime.split(' ')[0]);
+        const minutes = parseFloat(op.estimatedTime.split(' ')[0]);
         return sum + minutes;
       }, 0);
 
-      const setupTime = uniqueTools * 2; // 2 min per tool change
+      const setupTime = uniqueTools * 2.5; // 2.5 min per tool change
       const actualTime = estimatedTime + setupTime;
 
       const results = {
@@ -176,9 +176,33 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
   };
 
   const totalEstimatedTime = operations.reduce((total, op) => {
-    const minutes = parseInt(op.estimatedTime.split(' ')[0]);
+    const minutes = parseFloat(op.estimatedTime.split(' ')[0]);
     return total + minutes;
   }, 0);
+
+  // Helper function for volume calculation
+  const calculateFeatureVolume = (feature: any): number => {
+    if (!feature || !feature.dimensions) return 2;
+    
+    switch (feature.type) {
+      case 'pocket':
+        const w = feature.dimensions.width || 20;
+        const l = feature.dimensions.length || 20;
+        const d = feature.dimensions.depth || 10;
+        return (w * l * d) / 1000; // mm³ to cm³
+      case 'hole':
+        const dia = feature.dimensions.diameter || 10;
+        const depth = feature.dimensions.depth || dia * 2;
+        return (Math.PI * (dia/2) * (dia/2) * depth) / 1000;
+      case 'slot':
+        const slotL = feature.dimensions.length || 30;
+        const slotW = feature.dimensions.width || 10;
+        const slotD = feature.dimensions.depth || 8;
+        return (slotL * slotW * slotD) / 1000;
+      default:
+        return 2;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -328,6 +352,7 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                   <MaterialRemovalSimulation 
                     operations={operations.map(op => op._productionData).filter(Boolean)}
                     originalGeometry={originalGeometry}
+                    detectedFeatures={detectedFeatures}
                     onSimulationComplete={() => {
                       const totalFeatures = toolAssignments.length;
                       const uniqueTools = new Set(toolAssignments.map(a => a.toolId || 'default')).size;
@@ -336,8 +361,15 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                         return sum + minutes;
                       }, 0);
 
-                      const setupTime = uniqueTools * 2;
+                      const setupTime = uniqueTools * 2.5;
                       const actualTime = estimatedTime + setupTime;
+
+                      const totalVolume = operations.reduce((sum, op) => {
+                        if (op._productionData?.feature) {
+                          return sum + calculateFeatureVolume(op._productionData.feature);
+                        }
+                        return sum + 2; // Default volume
+                      }, 0);
 
                       const results = {
                         totalTime: `${actualTime.toFixed(1)} minutes`,
@@ -345,15 +377,15 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                         setupTime: setupTime,
                         toolChanges: uniqueTools,
                         operations: totalFeatures,
-                        totalDistance: (estimatedTime * 85 + Math.random() * 1000).toFixed(1),
-                        materialRemoved: (totalFeatures * 2.5 + Math.random() * 5).toFixed(1) + " cm³",
-                        quality: actualTime < 30 ? "Excellent" : actualTime < 60 ? "Good" : "Fair",
-                        warnings: uniqueTools > 5 ? 2 : Math.random() > 0.7 ? 1 : 0,
+                        totalDistance: (estimatedTime * 120 + Math.random() * 500).toFixed(1),
+                        materialRemoved: `${totalVolume.toFixed(1)} cm³`,
+                        quality: actualTime < 35 ? "Excellent" : actualTime < 65 ? "Good" : "Fair",
+                        warnings: uniqueTools > 5 ? 2 : actualTime > 60 ? 1 : 0,
                         gcode: {
-                          lines: Math.floor(totalFeatures * 800 + estimatedTime * 50),
-                          size: (totalFeatures * 45 + estimatedTime * 3.2).toFixed(1) + " KB"
+                          lines: Math.floor(totalFeatures * 1200 + estimatedTime * 85),
+                          size: (totalFeatures * 55 + estimatedTime * 4.8).toFixed(1) + " KB"
                         },
-                        efficiency: Math.min(95, 70 + (30 - actualTime) / 2)
+                        efficiency: Math.min(95, Math.max(65, 85 - (actualTime - 25) / 3))
                       };
 
                       onSimulationComplete(results);

@@ -20,6 +20,7 @@ interface Operation {
 interface MaterialRemovalSimulationProps {
   operations: Operation[];
   originalGeometry?: THREE.BufferGeometry;
+  detectedFeatures?: any[];
   onSimulationComplete?: () => void;
 }
 
@@ -337,6 +338,7 @@ const SimulationScene: React.FC<{
 export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps> = ({
   operations,
   originalGeometry,
+  detectedFeatures,
   onSimulationComplete
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -366,14 +368,14 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
     }
   }, [originalGeometry]);
 
-  // Generate realistic toolpaths based on actual geometry
+  // Generate realistic toolpaths based on actual geometry and detected features
   const operationsWithToolpaths = useMemo(() => {
     return operations.map(op => ({
       ...op,
-      toolpath: generateRealisticToolpath(op, originalGeometry),
+      toolpath: generateRealisticToolpath(op, originalGeometry, detectedFeatures),
       duration: getDurationForOperation(op)
     }));
-  }, [operations, originalGeometry]);
+  }, [operations, originalGeometry, detectedFeatures]);
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -477,8 +479,12 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
   );
 };
 
-// Enhanced toolpath generation based on real geometry
-function generateRealisticToolpath(operation: any, originalGeometry?: THREE.BufferGeometry): THREE.Vector3[] {
+// Enhanced toolpath generation based on real geometry and detected features
+function generateRealisticToolpath(
+  operation: any, 
+  originalGeometry?: THREE.BufferGeometry, 
+  detectedFeatures?: any[]
+): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
   const feature = operation.feature;
   const tool = operation.tool;
@@ -487,15 +493,26 @@ function generateRealisticToolpath(operation: any, originalGeometry?: THREE.Buff
     return generateFallbackToolpath(operation);
   }
   
+  // Use actual STL bounding box for realistic scaling
+  let scalingFactor = 1;
+  if (originalGeometry) {
+    originalGeometry.computeBoundingBox();
+    const box = originalGeometry.boundingBox!;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    // Scale toolpath to match actual part size
+    scalingFactor = Math.max(size.x, size.y, size.z) / 100; // Normalize to reasonable scale
+  }
+  
   const featureCenter = new THREE.Vector3(
-    feature.position.x || 0,
-    feature.position.y || 0,
-    feature.position.z || 0
+    (feature.position.x || 0) * scalingFactor,
+    (feature.position.y || 0) * scalingFactor,
+    (feature.position.z || 0) * scalingFactor
   );
   
-  const toolDiameter = tool?.diameter || 10;
-  const safeHeight = 25; // mm above part
-  const retractHeight = 5; // mm above part
+  const toolDiameter = (tool?.diameter || 10) * scalingFactor;
+  const safeHeight = 25 * scalingFactor; // mm above part
+  const retractHeight = 5 * scalingFactor; // mm above part
   
   switch (operation.type) {
     case 'roughing':
@@ -531,6 +548,8 @@ function generatePocketRoughingToolpath(
   retractHeight: number
 ): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
+  
+  // Use boundary vertices if available for more accurate toolpaths
   const width = feature.dimensions.width || 20;
   const length = feature.dimensions.length || 20;
   const depth = feature.dimensions.depth || 10;

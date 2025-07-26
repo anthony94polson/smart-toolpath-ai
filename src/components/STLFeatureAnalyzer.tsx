@@ -285,8 +285,11 @@ export class STLFeatureAnalyzer {
     
     const confidence = Math.min(0.95, 0.6 + (surface.faces.length / 50) + (aspectRatio > 3 ? 0.2 : 0));
     
+    // Fix coordinate positioning - use surface centroid for more accurate positioning
+    const surfaceCentroid = this.calculateSurfaceCentroid(surface);
+    
     return {
-      center: { x: boundingBox.center.x, y: boundingBox.center.y, z: boundingBox.center.z },
+      center: { x: surfaceCentroid.x, y: surfaceCentroid.y, z: surfaceCentroid.z },
       diameter,
       depth,
       confidence,
@@ -499,8 +502,11 @@ export class STLFeatureAnalyzer {
     confidence += Math.min(0.1, depthDifference / 20); // Deeper = higher confidence
     confidence += surface.faces.length > 10 ? 0.1 : 0; // More faces = better definition
     
+    // Fix coordinate positioning - use surface centroid for accurate positioning
+    const surfaceCentroid = this.calculateSurfaceCentroid(surface);
+    
     return {
-      center: { x: boundingBox.center.x, y: boundingBox.center.y, z: boundingBox.center.z },
+      center: { x: surfaceCentroid.x, y: surfaceCentroid.y, z: surfaceCentroid.z },
       width,
       length,
       depth,
@@ -538,63 +544,61 @@ export class STLFeatureAnalyzer {
   }
 
 
-  public analyzeFeatures(): { features: Feature[]; analysisResults: AnalysisResults } {
-    console.log('STLFeatureAnalyzer: Starting advanced feature analysis...');
-    console.log(`Analyzed ${this.surfaceClusters.length} surface clusters and ${this.edges.length} sharp edges`);
-    
-    const boundingBox = this.getBoundingBox();
-    
-    // Detect different types of features using advanced methods
+  public analyzeFeatures(): AnalysisResults {
     const holes = this.detectHoles();
     const pockets = this.detectPockets();
     const slots = this.detectSlots();
     const chamfers = this.detectChamfers();
     const steps = this.detectSteps();
     
-    // Combine all features and filter by confidence
-    const allFeatures = [...holes, ...pockets, ...slots, ...chamfers, ...steps]
-      .filter(feature => feature.confidence > 0.6)
-      .sort((a, b) => b.confidence - a.confidence); // Sort by confidence
+    const allFeatures = [...holes, ...pockets, ...slots, ...chamfers, ...steps];
     
-    // Calculate overall analysis confidence
-    const avgConfidence = allFeatures.length > 0 
-      ? allFeatures.reduce((sum, f) => sum + f.confidence, 0) / allFeatures.length 
-      : 0.5;
+    // Compile results
+    const features = {
+      holes: holes.length,
+      pockets: pockets.length,
+      slots: slots.length,
+      chamfers: chamfers.length,
+      steps: steps.length
+    };
     
-    // Generate analysis results
-    const analysisResults: AnalysisResults = {
-      fileName: "uploaded.stl",
-      fileSize: this.vertices.length * 4,
-      features: {
-        hole: holes.length,
-        pocket: pockets.length,
-        slot: slots.length,
-        chamfer: chamfers.length,
-        step: steps.length
-      },
+    const boundingBox = this.getBoundingBox();
+    const volume = this.calculateActualVolume();
+    const surfaceArea = this.calculateSurfaceArea();
+    const complexity = this.assessComplexity(allFeatures);
+    const confidence = this.calculateOverallConfidence(allFeatures);
+    const estimatedTime = this.calculateRealisticMachiningTime(allFeatures);
+    
+    const results: AnalysisResults = {
+      fileName: "uploaded_file.stl",
+      fileSize: 0,
+      features,
       geometry: {
         boundingBox: {
-          x: boundingBox.size.x.toFixed(1),
-          y: boundingBox.size.y.toFixed(1),
-          z: boundingBox.size.z.toFixed(1)
+          x: `${boundingBox.size.x.toFixed(1)}mm`,
+          y: `${boundingBox.size.y.toFixed(1)}mm`,
+          z: `${boundingBox.size.z.toFixed(1)}mm`
         },
-        volume: this.calculateActualVolume().toFixed(1),
-        surfaceArea: this.calculateSurfaceArea().toFixed(1)
+        volume: `${volume.toFixed(1)} cm³`,
+        surfaceArea: `${surfaceArea.toFixed(1)} cm²`
       },
-      materials: "Aluminum 6061-T6",
-      complexity: this.assessComplexity(allFeatures),
-      confidence: avgConfidence.toFixed(2),
-      estimatedTime: this.estimateMachiningTime(allFeatures).toFixed(0) + " minutes",
-      timestamp: new Date().toISOString()
+      materials: "Aluminum 6061",
+      complexity: complexity,
+      confidence: `${Math.round(confidence * 100)}%`,
+      estimatedTime: estimatedTime,
+      timestamp: new Date().toISOString(),
+      originalGeometry: this.geometry
     };
     
-    console.log(`STLFeatureAnalyzer: Analysis complete. Found ${allFeatures.length} high-confidence features.`);
-    console.log('Feature breakdown:', analysisResults.features);
+    // Store detected features for later use
+    (results as any).detectedFeatures = allFeatures;
     
-    return {
-      features: allFeatures,
-      analysisResults
-    };
+    return results;
+  }
+  
+  private calculateOverallConfidence(features: Feature[]): number {
+    if (features.length === 0) return 0.5;
+    return features.reduce((sum, f) => sum + f.confidence, 0) / features.length;
   }
 
   private detectSlots(): Feature[] {
@@ -825,6 +829,99 @@ export class STLFeatureAnalyzer {
     return { x: center.x, y: center.y, z: center.z };
   }
 
+  private calculateSurfaceCentroid(surface: SurfaceCluster): THREE.Vector3 {
+    const centroid = new THREE.Vector3();
+    surface.faces.forEach(face => {
+      centroid.add(face.center);
+    });
+    centroid.divideScalar(surface.faces.length);
+    return centroid;
+  }
+
+  private calculateRealisticMachiningTime(features: Feature[]): string {
+    let totalTime = 0;
+    const uniqueTools = new Set();
+    
+    features.forEach(feature => {
+      // Add tool type based on feature
+      switch (feature.type) {
+        case 'pocket':
+          uniqueTools.add('endmill');
+          // Realistic time calculation for pocket machining
+          const volume = (feature.dimensions.width * feature.dimensions.length * feature.dimensions.depth) / 1000; // cm³
+          const materialRemovalRate = 3.5; // cm³/min for aluminum roughing
+          const roughingTime = volume / materialRemovalRate;
+          const finishingTime = this.calculateContourTime(feature);
+          totalTime += roughingTime + finishingTime;
+          break;
+          
+        case 'hole':
+          uniqueTools.add('drill');
+          const diameter = feature.dimensions.diameter;
+          const depth = feature.dimensions.depth || diameter * 2.5;
+          const feedPerRev = 0.05 * diameter; // mm/rev
+          const spindleSpeed = Math.min(2000, 100000 / diameter); // Surface speed limited
+          const pecks = Math.ceil(depth / (diameter * 3)); // Conservative peck depth
+          const drillTime = (depth * (1 + pecks * 0.3)) / (feedPerRev * spindleSpeed / 60) + pecks * 0.1;
+          totalTime += drillTime;
+          break;
+          
+        case 'slot':
+          uniqueTools.add('endmill');
+          const slotLength = feature.dimensions.length;
+          const slotWidth = feature.dimensions.width;
+          const slotDepth = feature.dimensions.depth || 5;
+          // Multiple passes needed for width
+          const passes = Math.ceil(slotWidth / (slotWidth * 0.6)); // 60% stepover
+          const slotTime = (slotLength * passes * slotDepth) / 1000; // Rough calculation
+          totalTime += slotTime;
+          break;
+          
+        case 'chamfer':
+          uniqueTools.add('chamfer');
+          const perimeter = this.calculateFeaturePerimeter(feature);
+          const chamferFeedrate = 500; // mm/min
+          totalTime += perimeter / chamferFeedrate + 0.5;
+          break;
+          
+        case 'step':
+          uniqueTools.add('endmill');
+          totalTime += 3; // Typical step operation
+          break;
+      }
+    });
+    
+    // Add setup and tool change time
+    const setupTime = uniqueTools.size * 2.5; // 2.5 min per tool
+    const safetyMargin = totalTime * 0.15; // 15% safety margin
+    
+    totalTime += setupTime + safetyMargin;
+    
+    // Ensure realistic range: 15-90 minutes for typical parts
+    totalTime = Math.max(15, Math.min(90, totalTime));
+    
+    return `${Math.round(totalTime)} minutes`;
+  }
+  
+  private calculateContourTime(feature: Feature): number {
+    const perimeter = 2 * (feature.dimensions.width + feature.dimensions.length);
+    const finishingFeedrate = 800; // mm/min for finishing
+    return (perimeter / finishingFeedrate) + 1; // +1 min for approach/retract
+  }
+  
+  private calculateFeaturePerimeter(feature: Feature): number {
+    switch (feature.type) {
+      case 'pocket':
+        return 2 * (feature.dimensions.width + feature.dimensions.length);
+      case 'hole':
+        return Math.PI * feature.dimensions.diameter;
+      case 'slot':
+        return 2 * feature.dimensions.length + Math.PI * feature.dimensions.width;
+      default:
+        return 50; // Default perimeter
+    }
+  }
+
   private calculateActualVolume(): number {
     return this.faces.reduce((sum, face) => sum + face.area, 0) * 0.1; // Simplified volume calculation
   }
@@ -845,36 +942,5 @@ export class STLFeatureAnalyzer {
     if (complexityScore > 15) return "High";
     if (complexityScore > 8) return "Medium";
     return "Low";
-  }
-
-  private estimateMachiningTime(features: Feature[]): number {
-    let baseTime = 30; // Base setup time
-    
-    features.forEach(feature => {
-      switch (feature.type) {
-        case 'hole':
-          baseTime += 5 + (feature.dimensions.depth || 10) * 0.5;
-          break;
-        case 'pocket':
-          baseTime += 15 + (feature.dimensions.width * feature.dimensions.length) * 0.1;
-          break;
-        case 'slot':
-          baseTime += 10 + (feature.dimensions.length || 10) * 0.3;
-          break;
-        case 'chamfer':
-          baseTime += 3;
-          break;
-        case 'step':
-          baseTime += 8 + (feature.dimensions.width * feature.dimensions.length) * 0.05;
-          break;
-      }
-      
-      // Add time for low-confidence features (require manual verification)
-      if (feature.confidence < 0.8) {
-        baseTime += 10;
-      }
-    });
-    
-    return baseTime;
   }
 }

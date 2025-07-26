@@ -47,15 +47,16 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
               console.log('STLLoader: Starting feature analysis...');
               try {
                 const analyzer = new STLFeatureAnalyzer(geometry);
-                const { features, analysisResults } = analyzer.analyzeFeatures();
+                const analysisResults = analyzer.analyzeFeatures();
                 
                 // Update analysis results with actual file info
                 analysisResults.fileName = file.name;
                 analysisResults.fileSize = file.size;
                 analysisResults.originalGeometry = geometry;
                 
-                console.log('STLLoader: Feature analysis complete:', features.length, 'features found');
-                onFeaturesAnalyzed(features, analysisResults);
+                const detectedFeatures = (analysisResults as any).detectedFeatures || [];
+                console.log('STLLoader: Feature analysis complete:', detectedFeatures.length, 'features found');
+                onFeaturesAnalyzed(detectedFeatures, analysisResults);
               } catch (error) {
                 console.error('STLLoader: Feature analysis failed:', error);
                 // Continue with geometry loading even if analysis fails
