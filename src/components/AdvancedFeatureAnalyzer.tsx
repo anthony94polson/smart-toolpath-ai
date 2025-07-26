@@ -55,7 +55,11 @@ export class AdvancedFeatureAnalyzer {
   }
 
   private calculateMeshResolution(): number {
-    const bbox = new THREE.Box3().setFromBufferAttribute(this.geometry.attributes.position);
+    const positionAttribute = this.geometry.attributes.position;
+    if (!(positionAttribute instanceof THREE.BufferAttribute)) {
+      throw new Error('Position attribute must be a BufferAttribute');
+    }
+    const bbox = new THREE.Box3().setFromBufferAttribute(positionAttribute);
     const size = bbox.getSize(new THREE.Vector3());
     return Math.min(size.x, size.y, size.z) / 1000; // Adaptive resolution
   }

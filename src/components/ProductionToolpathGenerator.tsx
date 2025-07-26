@@ -2,11 +2,19 @@ import React from 'react';
 import * as THREE from 'three';
 
 export interface FeatureGeometry {
-  type: 'pocket' | 'hole' | 'slot' | 'chamfer' | 'step';
+  type: 'pocket' | 'hole' | 'slot' | 'chamfer' | 'step' | 'boss' | 'rib';
   dimensions: { [key: string]: number };
   position: { x: number; y: number; z: number };
   boundaryVertices?: THREE.Vector3[];
   surfaceNormal?: THREE.Vector3;
+}
+
+export interface ToolpathPoint {
+  x: number;
+  y: number;
+  z: number;
+  feedrate: number;
+  spindleSpeed: number;
 }
 
 export interface ToolDefinition {
@@ -83,6 +91,12 @@ export class ProductionToolpathGenerator {
         return this.generateSlotOperation(feature, tool);
       case 'chamfer':
         return this.generateChamferOperation(feature, tool);
+      case 'step':
+        return this.generatePocketOperation(feature, tool); // Treat step like pocket
+      case 'boss':
+        return this.generateBossOperation(feature, tool);
+      case 'rib':
+        return this.generateRibOperation(feature, tool);
       default:
         return null;
     }
@@ -587,6 +601,106 @@ export class ProductionToolpathGenerator {
     };
     
     return defaultTools[toolId] || defaultTools['endmill_12mm'];
+  }
+
+  private generateBossOperation(feature: FeatureGeometry, tool: ToolDefinition): Operation {
+    // Boss operations typically require contouring around the outside
+    const parameters = this.calculateCuttingParameters(feature, tool, 'finishing');
+    const toolpath = this.generateBossToolpath(feature, tool, parameters);
+    
+    return {
+      id: `boss_${Date.now()}`,
+      name: `Boss Operation - ${feature.type}`,
+      type: 'finishing',
+      feature,
+      tool,
+      parameters,
+      toolpath: this.convertToToolpathSegments(toolpath),
+      estimatedTime: this.calculateMachiningTime(this.convertToToolpathSegments(toolpath), parameters),
+      materialRemovalRate: this.calculateMaterialRemovalRate(feature, parameters)
+    };
+  }
+
+  private generateRibOperation(feature: FeatureGeometry, tool: ToolDefinition): Operation {
+    // Rib operations are similar to boss but typically thinner
+    const parameters = this.calculateCuttingParameters(feature, tool, 'finishing');
+    const toolpath = this.generateRibToolpath(feature, tool, parameters);
+    
+    return {
+      id: `rib_${Date.now()}`,
+      name: `Rib Operation - ${feature.type}`,
+      type: 'finishing',
+      feature,
+      tool,
+      parameters,
+      toolpath: this.convertToToolpathSegments(toolpath),
+      estimatedTime: this.calculateMachiningTime(this.convertToToolpathSegments(toolpath), parameters),
+      materialRemovalRate: this.calculateMaterialRemovalRate(feature, parameters)
+    };
+  }
+
+  private convertToToolpathSegments(points: ToolpathPoint[]): ToolpathSegment[] {
+    const segments: ToolpathSegment[] = [];
+    
+    for (let i = 1; i < points.length; i++) {
+      const start = points[i - 1];
+      const end = points[i];
+      
+      segments.push({
+        type: 'linear',
+        startPoint: new THREE.Vector3(start.x, start.y, start.z),
+        endPoint: new THREE.Vector3(end.x, end.y, end.z),
+        feedrate: end.feedrate
+      });
+    }
+    
+    return segments;
+  }
+
+  private generateBossToolpath(feature: FeatureGeometry, tool: ToolDefinition, params: CuttingParameters): ToolpathPoint[] {
+    // Generate contour toolpath around boss perimeter
+    const toolpath: ToolpathPoint[] = [];
+    const stepover = tool.diameter * 0.4; // 40% stepover for finishing
+    
+    // Create multiple passes around the boss perimeter
+    for (let offset = stepover; offset <= feature.dimensions.radius || 10; offset += stepover) {
+      const radius = (feature.dimensions.radius || 10) + offset;
+      for (let angle = 0; angle <= 2 * Math.PI; angle += 0.1) {
+        toolpath.push({
+          x: feature.position.x + radius * Math.cos(angle),
+          y: feature.position.y + radius * Math.sin(angle),
+          z: feature.position.z,
+          feedrate: params.feedrate,
+          spindleSpeed: params.spindleSpeed
+        });
+      }
+    }
+    
+    return toolpath;
+  }
+
+  private generateRibToolpath(feature: FeatureGeometry, tool: ToolDefinition, params: CuttingParameters): ToolpathPoint[] {
+    // Generate toolpath along rib length
+    const toolpath: ToolpathPoint[] = [];
+    const length = feature.dimensions.length || 20;
+    const width = feature.dimensions.width || 5;
+    const stepSize = tool.diameter * 0.1;
+    
+    // Multiple passes along rib length
+    for (let pass = 0; pass < 2; pass++) {
+      const offsetY = (pass - 0.5) * width * 0.8;
+      for (let x = -length/2; x <= length/2; x += stepSize) {
+        toolpath.push({
+          x: feature.position.x + x,
+          y: feature.position.y + offsetY,
+          z: feature.position.z,
+          feedrate: params.feedrate,
+          spindleSpeed: params.spindleSpeed
+        });
+      }
+    }
+    
+    return toolpath;
   }
 
   private optimizeOperationSequence(operations: Operation[]): Operation[] {
