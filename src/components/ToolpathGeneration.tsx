@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import * as THREE from 'three';
 import { StepByStepSimulation } from './StepByStepSimulation';
 import { ProductionToolpathGenerator, FeatureGeometry } from './ProductionToolpathGenerator';
+import { AdvancedFeature } from './AdvancedFeatureAnalyzer';
 import { 
   Play, 
   Pause, 
@@ -25,7 +26,7 @@ interface ToolpathGenerationProps {
   onSimulationComplete: (results: any) => void;
   uploadedFile?: File;
   analysisResults?: any;
-  detectedFeatures?: any[];
+  detectedFeatures?: AdvancedFeature[];
   originalGeometry?: THREE.BufferGeometry;
 }
 
