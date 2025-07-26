@@ -23,11 +23,13 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
   const [loadingError, setLoadingError] = useState<string>('');
 
   const handleGeometryLoaded = useCallback((geometries: THREE.BufferGeometry[]) => {
+    console.log('Model3DViewer: Received geometries:', geometries.length);
     setLoadedGeometries(geometries);
     setLoadingError('');
   }, []);
 
   const handleLoadError = useCallback((error: string) => {
+    console.log('Model3DViewer: Load error:', error);
     setLoadingError(error);
     console.error('STEP loading error:', error);
     // Fallback to basic geometry
@@ -162,7 +164,15 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
   };
 
   return (
-    <div className="w-full h-64 bg-muted rounded-lg overflow-hidden">
+    <div className="w-full h-64 bg-muted rounded-lg overflow-hidden relative">
+      {/* Debug info */}
+      {uploadedFile && (
+        <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-xs z-10">
+          File: {uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)}KB)
+          <br />Geometries: {loadedGeometries.length}
+        </div>
+      )}
+      
       {/* STEP File Loader */}
       {uploadedFile && (
         <StepLoader

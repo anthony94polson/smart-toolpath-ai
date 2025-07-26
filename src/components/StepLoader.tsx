@@ -12,12 +12,14 @@ const StepLoader = ({ file, onGeometryLoaded, onError }: StepLoaderProps) => {
 
   useEffect(() => {
     const loadStepFile = async () => {
+      console.log('StepLoader: Starting to load file:', file.name);
       setIsLoading(true);
       
       try {
         // For now, create realistic mock geometry based on file characteristics
-        // In a production app, you'd use OpenCascade.js or similar to parse STEP files
+        console.log('StepLoader: Creating geometry for file:', file.name, 'Size:', file.size);
         const geometries = await createRealisticGeometry(file);
+        console.log('StepLoader: Generated geometries:', geometries.length);
         onGeometryLoaded(geometries);
       } catch (error) {
         console.error('STEP loading error:', error);
