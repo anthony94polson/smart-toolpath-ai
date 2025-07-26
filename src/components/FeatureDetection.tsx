@@ -222,6 +222,7 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected }: FeatureDetect
                 features={features}
                 selectedFeatures={selectedFeatures}
                 onFeatureClick={toggleFeatureSelection}
+                analysisResults={analysisResults}
               />
               
               <div className="flex justify-center space-x-2 mt-4">
