@@ -25,27 +25,59 @@ interface FeatureDetectionProps {
 }
 
 const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, analyzedFeatures }: FeatureDetectionProps) => {
-  // Use analyzed features if available, otherwise fallback to mock data
-  const [features] = useState<Feature[]>(analyzedFeatures || [
-    {
-      id: "P001",
-      type: "pocket",
-      dimensions: { width: 25, length: 40, depth: 8 },
-      position: { x: 50, y: 30, z: 0 },
-      confidence: 0.95,
-      toolRecommendation: "12mm End Mill",
-      visible: true
-    },
-    {
-      id: "H001",
-      type: "hole",
-      dimensions: { diameter: 6, depth: 20 },
-      position: { x: 25, y: 25, z: 0 },
-      confidence: 0.98,
-      toolRecommendation: "6mm Drill",
-      visible: true
+  // Convert analyzed features to the expected format
+  const [features] = useState<Feature[]>(() => {
+    if (analyzedFeatures && analyzedFeatures.length > 0) {
+      return analyzedFeatures.map((feature: any, index: number) => ({
+        id: feature.id || `F${index.toString().padStart(3, '0')}`,
+        type: feature.type,
+        dimensions: feature.dimensions,
+        position: feature.position,
+        confidence: feature.confidence || 0.9,
+        toolRecommendation: getToolRecommendation(feature),
+        visible: true
+      }));
     }
-  ]);
+    
+    // Fallback mock data only if no real features detected
+    return [
+      {
+        id: "P001",
+        type: "pocket",
+        dimensions: { width: 25, length: 40, depth: 8 },
+        position: { x: 50, y: 30, z: 0 },
+        confidence: 0.95,
+        toolRecommendation: "12mm End Mill",
+        visible: true
+      },
+      {
+        id: "H001",
+        type: "hole",
+        dimensions: { diameter: 6, depth: 20 },
+        position: { x: 25, y: 25, z: 0 },
+        confidence: 0.98,
+        toolRecommendation: "6mm Drill",
+        visible: true
+      }
+    ];
+  });
+
+  const getToolRecommendation = (feature: any): string => {
+    switch (feature.type) {
+      case 'hole':
+        return `${feature.dimensions.diameter}mm Drill`;
+      case 'pocket':
+        return `${Math.min(feature.dimensions.width, feature.dimensions.length) / 2}mm End Mill`;
+      case 'slot':
+        return `${feature.dimensions.width}mm End Mill`;
+      case 'chamfer':
+        return `${feature.dimensions.angle}° Chamfer Tool`;
+      case 'step':
+        return `${feature.dimensions.width / 2}mm End Mill`;
+      default:
+        return "General Purpose End Mill";
+    }
+  };
 
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
 

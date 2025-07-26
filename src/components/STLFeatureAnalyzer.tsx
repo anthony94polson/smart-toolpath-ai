@@ -41,6 +41,7 @@ interface AnalysisResults {
   confidence: string;
   estimatedTime: string;
   timestamp: string;
+  originalGeometry?: THREE.BufferGeometry;
 }
 
 export class STLFeatureAnalyzer {

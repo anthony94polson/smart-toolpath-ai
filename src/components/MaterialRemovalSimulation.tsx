@@ -88,55 +88,98 @@ const Workpiece: React.FC<{
 }> = ({ originalGeometry, removalProgress, currentOperation }) => {
   const workpieceRef = useRef<THREE.Mesh>(null);
   const [currentGeometry, setCurrentGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [baseGeometry, setBaseGeometry] = useState<THREE.BufferGeometry | null>(null);
 
   useEffect(() => {
     if (originalGeometry) {
-      // Clone the original geometry as the starting point
       const clonedGeometry = originalGeometry.clone();
-      setCurrentGeometry(clonedGeometry);
+      setBaseGeometry(clonedGeometry);
+      setCurrentGeometry(clonedGeometry.clone());
     }
   }, [originalGeometry]);
 
   useEffect(() => {
-    if (!currentGeometry || !currentOperation) return;
+    if (!baseGeometry || !currentOperation) return;
 
-    // Simulate material removal by scaling down certain regions
-    // In a real implementation, this would use CSG operations
-    const positions = currentGeometry.attributes.position.array;
-    const originalPositions = originalGeometry?.attributes.position.array;
+    // Create realistic material removal based on operation type
+    const newGeometry = baseGeometry.clone();
+    const positions = newGeometry.attributes.position.array as Float32Array;
+    const feature = currentOperation.feature;
     
-    if (originalPositions) {
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = originalPositions[i];
-        const y = originalPositions[i + 1];
-        const z = originalPositions[i + 2];
-        
-        // Simple material removal simulation based on operation type and progress
-        let removalFactor = 1;
-        
-        if (currentOperation.type === 'roughing') {
-          // Remove material progressively from outside
-          const distance = Math.sqrt(x * x + y * y);
-          if (distance > 0.5 * (1 - removalProgress * 0.3)) {
-            removalFactor = 0.7;
-          }
-        } else if (currentOperation.type === 'drilling') {
-          // Remove material in cylindrical regions
-          const distance = Math.sqrt(x * x + y * y);
-          if (distance < 0.1 && z > -0.2 * removalProgress) {
-            removalFactor = 0;
-          }
-        }
-        
-        (positions as Float32Array)[i] = x * removalFactor;
-        (positions as Float32Array)[i + 1] = y * removalFactor;
-        (positions as Float32Array)[i + 2] = z * removalFactor;
+    // Convert feature position from mm to meters (Three.js units)
+    const featurePos = new THREE.Vector3(
+      feature.position.x / 1000,
+      feature.position.y / 1000, 
+      feature.position.z / 1000
+    );
+    
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      const z = positions[i + 2];
+      
+      const vertex = new THREE.Vector3(x, y, z);
+      let shouldRemove = false;
+      
+      switch (feature.type) {
+        case 'hole':
+          const drillRadius = (feature.dimensions.diameter || 6) / 2000; // mm to m
+          const drillDepth = (feature.dimensions.depth || 10) / 1000;
+          const distanceFromAxis = Math.sqrt(
+            Math.pow(x - featurePos.x, 2) + 
+            Math.pow(y - featurePos.y, 2)
+          );
+          
+          shouldRemove = distanceFromAxis <= drillRadius && 
+                        z >= featurePos.z - drillDepth * removalProgress &&
+                        z <= featurePos.z;
+          break;
+          
+        case 'pocket':
+          const pocketWidth = (feature.dimensions.width || 20) / 2000;
+          const pocketLength = (feature.dimensions.length || 20) / 2000;
+          const pocketDepth = (feature.dimensions.depth || 5) / 1000;
+          
+          const withinPocketX = Math.abs(x - featurePos.x) <= pocketWidth / 2;
+          const withinPocketY = Math.abs(y - featurePos.y) <= pocketLength / 2;
+          const withinPocketZ = z >= featurePos.z - pocketDepth * removalProgress &&
+                                z <= featurePos.z;
+          
+          shouldRemove = withinPocketX && withinPocketY && withinPocketZ;
+          break;
+          
+        case 'slot':
+          const slotWidth = (feature.dimensions.width || 10) / 2000;
+          const slotLength = (feature.dimensions.length || 30) / 2000;
+          const slotDepth = (feature.dimensions.depth || 5) / 1000;
+          
+          const withinSlotX = Math.abs(x - featurePos.x) <= slotWidth / 2;
+          const withinSlotY = Math.abs(y - featurePos.y) <= slotLength / 2;
+          const withinSlotZ = z >= featurePos.z - slotDepth * removalProgress &&
+                             z <= featurePos.z;
+          
+          shouldRemove = withinSlotX && withinSlotY && withinSlotZ;
+          break;
+          
+        default:
+          // Generic material removal for other features
+          const toolRadius = (currentOperation.tool?.diameter || 10) / 2000;
+          const distance = vertex.distanceTo(featurePos);
+          shouldRemove = distance <= toolRadius && Math.random() < removalProgress;
       }
       
-      currentGeometry.attributes.position.needsUpdate = true;
-      currentGeometry.computeVertexNormals();
+      if (shouldRemove) {
+        // Move vertex below the work surface to simulate removal
+        positions[i + 2] = featurePos.z - 0.1;
+      }
     }
-  }, [removalProgress, currentOperation, currentGeometry, originalGeometry]);
+    
+    newGeometry.attributes.position.needsUpdate = true;
+    newGeometry.computeVertexNormals();
+    newGeometry.computeBoundingBox();
+    
+    setCurrentGeometry(newGeometry);
+  }, [removalProgress, currentOperation, baseGeometry]);
 
   if (!currentGeometry) {
     // Fallback geometry if no STL is loaded
@@ -414,51 +457,85 @@ export const MaterialRemovalSimulation: React.FC<MaterialRemovalSimulationProps>
   );
 };
 
-// Helper functions
+// Helper functions for realistic toolpath generation
 function generateMockToolpath(operation: any): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
+  const feature = operation.feature;
+  
+  // Convert positions from mm to meters for Three.js
+  const featurePos = new THREE.Vector3(
+    feature.position.x / 1000,
+    feature.position.y / 1000,
+    feature.position.z / 1000
+  );
   
   switch (operation.type) {
     case 'roughing':
-      // Generate spiral toolpath for roughing
-      for (let i = 0; i <= 100; i++) {
-        const angle = (i / 100) * Math.PI * 8;
-        const radius = 1 - (i / 100) * 0.8;
-        points.push(new THREE.Vector3(
-          Math.cos(angle) * radius,
-          Math.sin(angle) * radius,
-          0.1 - (i / 100) * 0.2
-        ));
+      // Generate adaptive clearing pattern
+      const pocketWidth = (feature.dimensions.width || 20) / 2000;
+      const pocketLength = (feature.dimensions.length || 20) / 2000;
+      const stepover = (operation.tool?.diameter || 10) / 3000; // Conservative stepover
+      
+      for (let y = -pocketLength/2; y <= pocketLength/2; y += stepover) {
+        const direction = Math.floor((y + pocketLength/2) / stepover) % 2 === 0 ? 1 : -1;
+        const startX = direction > 0 ? -pocketWidth/2 : pocketWidth/2;
+        const endX = direction > 0 ? pocketWidth/2 : -pocketWidth/2;
+        
+        for (let x = startX; direction > 0 ? x <= endX : x >= endX; x += direction * stepover/2) {
+          points.push(new THREE.Vector3(
+            featurePos.x + x,
+            featurePos.y + y,
+            featurePos.z - 0.002 // 2mm cutting depth
+          ));
+        }
       }
       break;
       
     case 'finishing':
-      // Generate contour toolpath for finishing
-      for (let i = 0; i <= 50; i++) {
-        const angle = (i / 50) * Math.PI * 2;
+      // Generate contour finishing passes
+      const contourRadius = Math.min(
+        (feature.dimensions.width || 20) / 2000,
+        (feature.dimensions.length || 20) / 2000
+      ) * 0.9;
+      
+      for (let i = 0; i <= 100; i++) {
+        const angle = (i / 100) * Math.PI * 2;
         points.push(new THREE.Vector3(
-          Math.cos(angle) * 0.9,
-          Math.sin(angle) * 0.9,
-          0
+          featurePos.x + Math.cos(angle) * contourRadius,
+          featurePos.y + Math.sin(angle) * contourRadius,
+          featurePos.z - 0.001
         ));
       }
       break;
       
     case 'drilling':
-      // Generate vertical drilling path
-      for (let i = 0; i <= 20; i++) {
-        points.push(new THREE.Vector3(0, 0, 0.1 - (i / 20) * 0.3));
+      // Generate realistic drilling cycle
+      const drillDepth = (feature.dimensions.depth || 10) / 1000;
+      const peckDepth = 0.002; // 2mm pecks
+      
+      for (let depth = 0; depth <= drillDepth; depth += peckDepth) {
+        // Drill down
+        points.push(new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z - depth));
+        // Retract for chip clearing
+        if (depth < drillDepth) {
+          points.push(new THREE.Vector3(featurePos.x, featurePos.y, featurePos.z + 0.002));
+        }
       }
       break;
       
     case 'chamfering':
       // Generate chamfer toolpath
-      for (let i = 0; i <= 30; i++) {
-        const angle = (i / 30) * Math.PI * 2;
+      const chamferSize = (feature.dimensions.size || 2) / 2000;
+      const perimeter = feature.dimensions.perimeter || 100;
+      
+      for (let i = 0; i <= perimeter; i++) {
+        const angle = (i / perimeter) * Math.PI * 2;
+        const radius = (Math.min(feature.dimensions.width, feature.dimensions.length) || 20) / 2000;
+        
         points.push(new THREE.Vector3(
-          Math.cos(angle) * 0.8,
-          Math.sin(angle) * 0.8,
-          0.05
+          featurePos.x + Math.cos(angle) * radius,
+          featurePos.y + Math.sin(angle) * radius,
+          featurePos.z + chamferSize
         ));
       }
       break;
@@ -468,11 +545,48 @@ function generateMockToolpath(operation: any): THREE.Vector3[] {
 }
 
 function getDurationForOperation(operation: any): number {
-  switch (operation.type) {
-    case 'roughing': return 5; // 5 seconds
-    case 'finishing': return 3;
-    case 'drilling': return 2;
-    case 'chamfering': return 2;
-    default: return 3;
+  // Realistic machining time calculation
+  const feature = operation.feature;
+  const volume = calculateFeatureVolume(feature);
+  const mrr = 100; // 100 mm³/min for conservative estimate
+  
+  // Base time from volume and MRR
+  let baseTime = volume / mrr * 60; // Convert to seconds
+  
+  // Add operation-specific factors
+  const operationFactors = {
+    'roughing': 2.5,    // Heavy material removal
+    'finishing': 1.8,   // Precision work
+    'drilling': 1.2,    // Standard drilling
+    'chamfering': 1.0   // Quick edge work
+  };
+  
+  const factor = operationFactors[operation.type as keyof typeof operationFactors] || 1.5;
+  
+  // Add setup and safety time
+  const setupTime = 45; // 45 seconds setup per operation
+  const safetyTime = 15; // 15 seconds for retracts and rapids
+  
+  return baseTime * factor + setupTime + safetyTime;
+}
+
+function calculateFeatureVolume(feature: any): number {
+  switch (feature.type) {
+    case 'pocket':
+      return (feature.dimensions.width || 20) * 
+             (feature.dimensions.length || 20) * 
+             (feature.dimensions.depth || 5);
+    case 'hole':
+      const radius = (feature.dimensions.diameter || 6) / 2;
+      return Math.PI * radius * radius * (feature.dimensions.depth || 10);
+    case 'slot':
+      return (feature.dimensions.width || 10) * 
+             (feature.dimensions.length || 30) * 
+             (feature.dimensions.depth || 5);
+    case 'chamfer':
+      return Math.pow(feature.dimensions.size || 2, 2) * 
+             (feature.dimensions.perimeter || 100) / 4;
+    default:
+      return 500; // mm³
   }
 }

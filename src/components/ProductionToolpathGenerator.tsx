@@ -537,17 +537,30 @@ export class ProductionToolpathGenerator {
 
   private calculateMachiningTime(toolpath: ToolpathSegment[], params: CuttingParameters): number {
     let totalTime = 0; // in minutes
+    let cuttingTime = 0;
+    let rapidTime = 0;
     
     for (const segment of toolpath) {
       const distance = segment.startPoint.distanceTo(segment.endPoint);
       const feedrate = segment.feedrate || params.feedrate;
       
       if (segment.type === 'rapid') {
-        totalTime += distance / 10000; // Rapid at ~10m/min
+        rapidTime += distance / 10000; // Rapid at ~10m/min
       } else {
-        totalTime += distance / feedrate;
+        cuttingTime += distance / feedrate;
       }
     }
+    
+    // Add setup time (5 minutes per operation)
+    const setupTime = 5;
+    
+    // Add tool change time (2 minutes)
+    const toolChangeTime = 2;
+    
+    // Add safety factor (20% additional time)
+    const safetyFactor = 1.2;
+    
+    totalTime = (cuttingTime + rapidTime + setupTime + toolChangeTime) * safetyFactor;
     
     return totalTime;
   }

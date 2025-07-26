@@ -52,6 +52,7 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
                 // Update analysis results with actual file info
                 analysisResults.fileName = file.name;
                 analysisResults.fileSize = file.size;
+                analysisResults.originalGeometry = geometry;
                 
                 console.log('STLLoader: Feature analysis complete:', features.length, 'features found');
                 onFeaturesAnalyzed(features, analysisResults);

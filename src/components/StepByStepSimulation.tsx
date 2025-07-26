@@ -176,10 +176,10 @@ const Workpiece: React.FC<{
 
 
   if (!modifiedGeometry && !originalGeometry) {
-    // Fallback stock material
+    // Realistic stock material dimensions
     return (
       <mesh ref={workpieceRef}>
-        <boxGeometry args={[0.1, 0.08, 0.03]} />
+        <boxGeometry args={[0.06, 0.04, 0.02]} />
         <meshStandardMaterial 
           color="hsl(var(--muted))" 
           metalness={0.3} 
