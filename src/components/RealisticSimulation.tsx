@@ -7,6 +7,8 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Eye, EyeOff, Settings } from 'lucide-react';
 
+console.log('RealisticSimulation module loading...');
+
 interface RealisticSimulationProps {
   geometry: THREE.BufferGeometry | null;
   toolpaths: any[];
