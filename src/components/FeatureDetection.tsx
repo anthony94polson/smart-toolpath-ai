@@ -162,13 +162,18 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          {Object.entries(analysisResults.features).map(([type, count]) => (
+          {Object.entries(
+            features.reduce((acc, feature) => {
+              acc[feature.type] = (acc[feature.type] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>)
+          ).map(([type, count]) => (
             <Card key={type} className="p-4 text-center">
               <div className={`w-8 h-8 rounded-full ${getFeatureColor(type)} mx-auto mb-2 flex items-center justify-center text-white`}>
                 {getFeatureIcon(type)}
               </div>
               <h3 className="font-semibold capitalize">{type}s</h3>
-              <p className="text-2xl font-bold text-primary">{count as number}</p>
+              <p className="text-2xl font-bold text-primary">{count}</p>
             </Card>
           ))}
         </div>
@@ -208,9 +213,12 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
                         <div>
                           <h4 className="font-semibold">{feature.id}</h4>
                           <p className="text-sm text-muted-foreground">
-                            {Object.entries(feature.dimensions).map(([key, value]) => 
-                              `${key}: ${value}mm`
-                            ).join(", ")}
+                            {feature.dimensions && Object.keys(feature.dimensions).length > 0 ? 
+                              Object.entries(feature.dimensions).map(([key, value]) => 
+                                `${key}: ${typeof value === 'number' ? value.toFixed(1) : value}mm`
+                              ).join(", ") : 
+                              "No dimensions available"
+                            }
                           </p>
                         </div>
                       </div>
