@@ -292,7 +292,23 @@ export class ProfessionalToolpathGenerator {
 
   private generateFeatureOperations(feature: MachinableFeature, toolingPlan: Map<string, ToolDefinition>): MachiningOperation[] {
     const operations: MachiningOperation[] = [];
-    const tool = toolingPlan.get(feature.id)!;
+    const tool = toolingPlan.get(feature.id);
+    
+    if (!tool) {
+      console.warn(`No tool assigned for feature ${feature.id}`);
+      return operations;
+    }
+
+    // Ensure machiningParameters exist with defaults
+    if (!feature.machiningParameters) {
+      feature.machiningParameters = {
+        stockToLeave: 0.1,
+        requiredTolerance: 0.1,
+        surfaceFinish: 'standard'
+      };
+    }
+
+    console.log(`Generating operations for ${feature.type} feature:`, feature);
 
     switch (feature.type) {
       case 'hole':
@@ -784,8 +800,47 @@ export class ProfessionalToolpathGenerator {
     tool: ToolDefinition, 
     parameters: CuttingParameters
   ): ToolpathSegment[] {
-    // Implementation for drilling toolpath
-    return [];
+    const toolpath: ToolpathSegment[] = [];
+    const center = feature.position;
+    const depth = feature.dimensions.depth;
+    
+    // Rapid approach to safe height above hole
+    toolpath.push({
+      type: 'rapid',
+      startPoint: new THREE.Vector3(center.x, center.y, this.safeHeight),
+      endPoint: new THREE.Vector3(center.x, center.y, this.safeHeight),
+      feedrate: this.machineCapabilities.rapids,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    // Position over hole at safe height
+    toolpath.push({
+      type: 'rapid',
+      startPoint: new THREE.Vector3(center.x, center.y, this.safeHeight),
+      endPoint: new THREE.Vector3(center.x, center.y, center.z + 2),
+      feedrate: this.machineCapabilities.rapids,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    // Drilling operation (full depth)
+    toolpath.push({
+      type: 'linear',
+      startPoint: new THREE.Vector3(center.x, center.y, center.z + 2),
+      endPoint: new THREE.Vector3(center.x, center.y, center.z - depth),
+      feedrate: parameters.plungeRate,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    // Retract to safe height
+    toolpath.push({
+      type: 'rapid',
+      startPoint: new THREE.Vector3(center.x, center.y, center.z - depth),
+      endPoint: new THREE.Vector3(center.x, center.y, this.safeHeight),
+      feedrate: this.machineCapabilities.rapids,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    return toolpath;
   }
 
   private generateContourFinishingToolpath(
@@ -793,8 +848,61 @@ export class ProfessionalToolpathGenerator {
     tool: ToolDefinition, 
     parameters: CuttingParameters
   ): ToolpathSegment[] {
-    // Implementation for contour finishing
-    return [];
+    const toolpath: ToolpathSegment[] = [];
+    const center = feature.position;
+    const width = feature.dimensions.width || 20;
+    const length = feature.dimensions.length || 20;
+    const depth = feature.depth;
+    
+    // Calculate contour path around feature boundary
+    const points = [
+      new THREE.Vector3(center.x - width/2, center.y - length/2, center.z - depth),
+      new THREE.Vector3(center.x + width/2, center.y - length/2, center.z - depth),
+      new THREE.Vector3(center.x + width/2, center.y + length/2, center.z - depth),
+      new THREE.Vector3(center.x - width/2, center.y + length/2, center.z - depth),
+      new THREE.Vector3(center.x - width/2, center.y - length/2, center.z - depth) // Close the loop
+    ];
+    
+    // Rapid approach
+    toolpath.push({
+      type: 'rapid',
+      startPoint: new THREE.Vector3(points[0].x, points[0].y, this.safeHeight),
+      endPoint: new THREE.Vector3(points[0].x, points[0].y, points[0].z + 2),
+      feedrate: this.machineCapabilities.rapids,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    // Plunge to depth
+    toolpath.push({
+      type: 'linear',
+      startPoint: new THREE.Vector3(points[0].x, points[0].y, points[0].z + 2),
+      endPoint: points[0],
+      feedrate: parameters.plungeRate,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    // Contour finishing moves
+    for (let i = 1; i < points.length; i++) {
+      toolpath.push({
+        type: 'linear',
+        startPoint: points[i-1],
+        endPoint: points[i],
+        feedrate: parameters.feedrate,
+        spindleSpeed: parameters.spindleSpeed
+      });
+    }
+    
+    // Retract
+    const lastPoint = points[points.length - 1];
+    toolpath.push({
+      type: 'rapid',
+      startPoint: lastPoint,
+      endPoint: new THREE.Vector3(lastPoint.x, lastPoint.y, this.safeHeight),
+      feedrate: this.machineCapabilities.rapids,
+      spindleSpeed: parameters.spindleSpeed
+    });
+    
+    return toolpath;
   }
 
   private generateSemiFinishingToolpath(

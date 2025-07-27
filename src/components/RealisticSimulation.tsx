@@ -153,10 +153,14 @@ const RealisticSimulation: React.FC<RealisticSimulationProps> = ({
   toolpaths = [],
   simulationTime
 }) => {
+  console.log('RealisticSimulation: Received', toolpaths.length, 'toolpaths');
+  
   const operations = groupToolpathsByOperation(toolpaths);
   const [visibleOperations, setVisibleOperations] = useState<Set<string>>(
     new Set(operations.map(op => op.name))
   );
+  
+  console.log('RealisticSimulation: Created', operations.length, 'operation groups');
 
   const toggleOperationVisibility = (operationName: string) => {
     setVisibleOperations(prev => {

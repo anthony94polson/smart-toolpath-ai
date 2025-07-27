@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { STLLoader } from 'three-stdlib';
 import * as THREE from 'three';
-import { STLFeatureAnalyzer } from './STLFeatureAnalyzer';
+import { AdvancedSTLAnalyzer } from './AdvancedSTLAnalyzer';
 
 interface STLLoaderProps {
   file: File;
@@ -44,21 +44,28 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
             
             // Analyze features using the loaded geometry
             if (onFeaturesAnalyzed) {
-              console.log('STLLoader: Starting feature analysis...');
+              console.log('STLLoader: Starting advanced feature analysis...');
               try {
-                const analyzer = new STLFeatureAnalyzer(geometry);
-                const analysisResults = analyzer.analyzeFeatures();
+                const analyzer = new AdvancedSTLAnalyzer(geometry);
+                const machinableFeatures = analyzer.analyzeMachinableFeatures();
                 
-                // Update analysis results with actual file info
-                analysisResults.fileName = file.name;
-                analysisResults.fileSize = file.size;
-                analysisResults.originalGeometry = geometry;
+                console.log('STLLoader: Advanced feature analysis complete:', machinableFeatures.length, 'machinable features found');
+                console.log('STLLoader: Sample feature:', machinableFeatures[0]);
                 
-                const detectedFeatures = (analysisResults as any).detectedFeatures || [];
-                console.log('STLLoader: Feature analysis complete:', detectedFeatures.length, 'features found');
-                onFeaturesAnalyzed(detectedFeatures, analysisResults);
+                // Create analysis results object for compatibility
+                const analysisResults = {
+                  fileName: file.name,
+                  fileSize: file.size,
+                  originalGeometry: geometry,
+                  detectedFeatures: machinableFeatures,
+                  triangleCount: geometry.attributes.position.count / 3,
+                  boundingBox: geometry.boundingBox,
+                  analysisTime: Date.now()
+                };
+                
+                onFeaturesAnalyzed(machinableFeatures, analysisResults);
               } catch (error) {
-                console.error('STLLoader: Feature analysis failed:', error);
+                console.error('STLLoader: Advanced feature analysis failed:', error);
                 // Continue with geometry loading even if analysis fails
               }
             }

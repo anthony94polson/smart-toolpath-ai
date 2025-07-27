@@ -90,6 +90,10 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
         const generator = new ProfessionalToolpathGenerator(stockBounds);
         const productionOps = generator.generateMachiningProgram(detectedFeatures);
         
+        console.log('Generated operations:', productionOps.length, 'operations');
+        console.log('Sample operation:', productionOps[0]);
+        console.log('Total toolpath points:', productionOps.reduce((sum, op) => sum + op.toolpath.length, 0));
+        
         // Convert to display format with enhanced information
         const displayOps = productionOps.map(op => ({
           id: op.id,
