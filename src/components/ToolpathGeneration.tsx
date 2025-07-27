@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import * as THREE from 'three';
-import { RealisticSimulation } from './RealisticSimulation';
+import RealisticSimulation from './RealisticSimulation';
 import { ProfessionalToolpathGenerator } from './ProfessionalToolpathGenerator';
 import { MachinableFeature } from './AdvancedSTLAnalyzer';
 import { 
@@ -361,52 +361,18 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
 
                 <div className="h-[600px]">
                   <RealisticSimulation 
-                    operations={operations.map(op => op._productionData).filter(Boolean)}
-                    originalGeometry={originalGeometry}
-                    onSimulationComplete={() => {
-                      const totalFeatures = toolAssignments.length;
-                      const uniqueTools = new Set(operations.map(op => op._productionData?.tool?.id || 'default')).size;
-                      const estimatedTime = operations.reduce((sum, op) => {
-                        const minutes = parseFloat(op.estimatedTime.split(' ')[0]);
-                        return sum + minutes;
-                      }, 0);
-
-                      const setupTime = uniqueTools * 2.5;
-                      const actualTime = estimatedTime + setupTime;
-
-                      const totalVolume = operations.reduce((sum, op) => {
-                        if (op._productionData?.materialRemovalRate) {
-                          return sum + (op._productionData.materialRemovalRate * op._productionData.estimatedTime);
-                        }
-                        return sum + calculateFeatureVolume(op._productionData?.feature || {});
-                      }, 0);
-
-                      const totalDistance = operations.reduce((sum, op) => {
-                        if (op._productionData?.toolpath) {
-                          return sum + op._productionData.toolpath.length * 2; // Approximate distance
-                        }
-                        return sum + 100; // Default distance
-                      }, 0);
-
-                      const results = {
-                        totalTime: `${actualTime.toFixed(1)} minutes`,
-                        machiningTime: estimatedTime.toFixed(1),
-                        setupTime: setupTime.toFixed(1),
-                        toolChanges: uniqueTools,
-                        operations: operations.length,
-                        totalDistance: `${totalDistance.toFixed(1)} mm`,
-                        materialRemoved: `${totalVolume.toFixed(1)} cm³`,
-                        quality: actualTime < 35 ? "Excellent" : actualTime < 65 ? "Good" : "Fair",
-                        warnings: uniqueTools > 5 ? 2 : actualTime > 60 ? 1 : 0,
-                        gcode: {
-                          lines: Math.floor(operations.length * 1500 + estimatedTime * 120),
-                          size: (operations.length * 65 + estimatedTime * 5.2).toFixed(1) + " KB"
-                        },
-                        efficiency: Math.min(95, Math.max(65, 85 - Math.max(0, (actualTime - 25) / 3)))
-                      };
-
-                      onSimulationComplete(results);
-                    }}
+                    geometry={originalGeometry || null}
+                    toolpaths={operations.map(op => ({
+                      operation: op.type.toLowerCase(),
+                      points: op._productionData?.toolpath?.map((seg: any) => ({
+                        x: seg.startPoint.x,
+                        y: seg.startPoint.y,
+                        z: seg.startPoint.z
+                      })) || [],
+                      toolDiameter: op._productionData?.tool?.diameter || 6,
+                      toolType: op._productionData?.tool?.type || 'endmill'
+                    }))}
+                    simulationTime={totalEstimatedTime * 60}
                   />
                 </div>
               </div>
