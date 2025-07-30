@@ -12,6 +12,7 @@ import {
   AAGNetFeature,
   AAGNetAnalysisRequest 
 } from '@/services/PythonAAGNetService';
+import { AAGNetInspiredAnalyzer } from './AAGNetInspiredAnalyzer';
 import { Clock, Cpu, Target, Zap, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 interface PythonAAGNetAnalyzerProps {
@@ -58,6 +59,132 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
     }
   };
 
+  const checkSupabaseConnection = async (): Promise<boolean> => {
+    // Simple check to see if we have a real Supabase URL
+    try {
+      const models = await pythonAAGNetService.getAvailableModels();
+      return true;
+    } catch (error) {
+      console.log('Supabase connection check failed:', error);
+      return false;
+    }
+  };
+
+  const startBrowserAAGNetAnalysis = async () => {
+    try {
+      setAnalysisStatus({
+        status: 'analyzing',
+        progress: 10,
+        message: 'Starting browser-based AAGNet analysis...'
+      });
+
+      onProgress(0.1, 'Initializing browser AAGNet analyzer...');
+
+      // Ensure geometry has normals
+      if (!geometry.attributes.normal) {
+        geometry.computeVertexNormals();
+      }
+
+      setAnalysisStatus(prev => ({
+        ...prev,
+        progress: 30,
+        message: 'Building geometric attributed adjacency graph...'
+      }));
+
+      // Create AAGNet analyzer
+      const analyzer = new AAGNetInspiredAnalyzer(geometry);
+      
+      onProgress(0.4, 'Analyzing geometric features...');
+      
+      setAnalysisStatus(prev => ({
+        ...prev,
+        progress: 60,
+        message: 'Detecting machining features...'
+      }));
+
+      // Run feature recognition
+      const geometricFeatures = await analyzer.recognizeFeatures();
+
+      onProgress(0.8, 'Converting to machining format...');
+
+      setAnalysisStatus(prev => ({
+        ...prev,
+        progress: 90,
+        message: 'Finalizing results...'
+      }));
+
+      // Convert to AAGNet result format
+      const mockResult: AAGNetAnalysisResult = {
+        analysisId: `browser_aagnet_${Date.now()}`,
+        features: geometricFeatures.map((gf, index) => ({
+          id: gf.id,
+          type: gf.type as any,
+          confidence: gf.confidence,
+          position: [gf.position.x, gf.position.y, gf.position.z],
+          dimensions: gf.dimensions,
+          boundingBox: {
+            min: [gf.boundingBox.min.x, gf.boundingBox.min.y, gf.boundingBox.min.z],
+            max: [gf.boundingBox.max.x, gf.boundingBox.max.y, gf.boundingBox.max.z]
+          },
+          normal: gf.normal ? [gf.normal.x, gf.normal.y, gf.normal.z] : undefined,
+          geometricAttributes: gf.geometricAttributes,
+          machiningParameters: {
+            toolRecommendation: getToolRecommendation(gf.type, gf.dimensions)
+          }
+        })),
+        metadata: {
+          modelVersion: 'Browser AAGNet v1.0',
+          processingTime: 0,
+          meshQuality: 0.85,
+          geometricComplexity: 0.7
+        },
+        statistics: {
+          totalFeatures: geometricFeatures.length,
+          featuresByType: geometricFeatures.reduce((acc, f) => {
+            acc[f.type] = (acc[f.type] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+          averageConfidence: geometricFeatures.length > 0 
+            ? geometricFeatures.reduce((sum, f) => sum + f.confidence, 0) / geometricFeatures.length 
+            : 0,
+          processingSteps: [
+            'Browser geometry processing',
+            'Geometric graph construction',
+            'Topological analysis',
+            'Feature classification'
+          ]
+        }
+      };
+
+      onProgress(1.0, `Browser AAGNet analysis complete - ${geometricFeatures.length} features detected`);
+      handleAnalysisComplete(mockResult);
+
+    } catch (error) {
+      console.error('Browser AAGNet analysis failed:', error);
+      throw error;
+    }
+  };
+
+  const getToolRecommendation = (type: string, dimensions: Record<string, number>): string => {
+    switch (type) {
+      case 'hole':
+        const diameter = dimensions.diameter || 5;
+        return diameter < 3 ? 'Drill Bit (< 3mm)' : 
+               diameter < 10 ? 'Standard Drill (3-10mm)' : 
+               'Large Drill (> 10mm)';
+      case 'pocket':
+        return 'End Mill';
+      case 'slot':
+        return 'Slot Mill';
+      case 'chamfer':
+        return 'Chamfer Mill';
+      case 'step':
+        return 'Face Mill';
+      default:
+        return 'End Mill';
+    }
+  };
+
   const startPythonAnalysis = async () => {
     if (!geometry || !geometry.attributes.position) {
       onError('Invalid geometry provided');
@@ -67,12 +194,22 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
     setAnalysisStatus({
       status: 'analyzing',
       progress: 0,
-      message: 'Preparing STL data for Python AAGNet analysis...',
+      message: 'Checking Python backend availability...',
       startTime: Date.now()
     });
 
     try {
-      // Convert THREE.js geometry to STL buffer
+      // First check if we have a real Supabase connection
+      const hasRealSupabase = await checkSupabaseConnection();
+      
+      if (!hasRealSupabase) {
+        // Fallback to browser-based AAGNet analysis
+        onProgress(0.1, 'Supabase not connected - using browser-based AAGNet analysis...');
+        await startBrowserAAGNetAnalysis();
+        return;
+      }
+
+      // Continue with Python backend
       onProgress(0.1, 'Converting geometry to STL format...');
       const stlBuffer = await convertGeometryToSTL(geometry);
 
@@ -107,12 +244,34 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
 
     } catch (error) {
       console.error('Python AAGNet analysis failed:', error);
-      setAnalysisStatus({
-        status: 'failed',
-        progress: 0,
-        message: `Analysis failed: ${error}`
-      });
-      onError(`Python AAGNet analysis failed: ${error}`);
+      
+      // Check if it's a Supabase connection error
+      if (error.toString().includes('Supabase connection not configured') || 
+          error.toString().includes('Failed to fetch')) {
+        setAnalysisStatus({
+          status: 'analyzing',
+          progress: 0.2,
+          message: 'Python backend unavailable - switching to browser analysis...'
+        });
+        
+        try {
+          await startBrowserAAGNetAnalysis();
+        } catch (browserError) {
+          setAnalysisStatus({
+            status: 'failed',
+            progress: 0,
+            message: `Both Python and browser analysis failed: ${browserError}`
+          });
+          onError(`Analysis failed: ${browserError}`);
+        }
+      } else {
+        setAnalysisStatus({
+          status: 'failed',
+          progress: 0,
+          message: `Analysis failed: ${error}`
+        });
+        onError(`Python AAGNet analysis failed: ${error}`);
+      }
     }
   };
 

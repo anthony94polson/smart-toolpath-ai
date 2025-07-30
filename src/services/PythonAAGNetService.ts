@@ -81,21 +81,21 @@ export class PythonAAGNetService {
   async analyzeSTL(request: AAGNetAnalysisRequest): Promise<AAGNetAnalysisResult> {
     console.log('PythonAAGNetService: Starting AAGNet analysis...');
     
+    // Check if we have real Supabase credentials
+    const hasRealSupabase = !this.baseUrl.includes('placeholder');
+    
+    if (!hasRealSupabase) {
+      console.warn('PythonAAGNetService: No real Supabase connection available, analysis will be handled by browser fallback');
+      throw new Error('Supabase connection not configured - please connect your project to Supabase for Python AAGNet analysis');
+    }
+    
     try {
       // Try Supabase Edge Function first
       const result = await this.analyzeWithSupabase(request);
       return result;
     } catch (supabaseError) {
-      console.warn('Supabase AAGNet failed, trying direct API:', supabaseError);
-      
-      try {
-        // Fallback to direct Python API
-        const result = await this.analyzeWithDirectAPI(request);
-        return result;
-      } catch (apiError) {
-        console.error('Both Supabase and direct API failed:', apiError);
-        throw new Error(`AAGNet analysis failed: ${apiError}`);
-      }
+      console.warn('Supabase AAGNet failed:', supabaseError);
+      throw new Error(`Python AAGNet analysis failed: ${supabaseError}`);
     }
   }
 
