@@ -42,32 +42,23 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
             // Compute normals for proper lighting
             geometry.computeVertexNormals();
             
-            // Analyze features using the loaded geometry
+            // Skip automatic feature analysis - will be done via ML analyzer
             if (onFeaturesAnalyzed) {
-              console.log('STLLoader: Starting fast feature analysis...');
-              try {
-                const analyzer = new FastSTLAnalyzer(geometry);
-                const machinableFeatures = analyzer.analyzeMachinableFeatures();
-                
-                console.log('STLLoader: Fast feature analysis complete:', machinableFeatures.length, 'machinable features found');
-                console.log('STLLoader: Sample feature:', machinableFeatures[0]);
-                
-                // Create analysis results object for compatibility
-                const analysisResults = {
-                  fileName: file.name,
-                  fileSize: file.size,
-                  originalGeometry: geometry,
-                  detectedFeatures: machinableFeatures,
-                  triangleCount: geometry.attributes.position.count / 3,
-                  boundingBox: geometry.boundingBox,
-                  analysisTime: Date.now()
-                };
-                
-                onFeaturesAnalyzed(machinableFeatures, analysisResults);
-              } catch (error) {
-                console.error('STLLoader: Fast feature analysis failed:', error);
-                // Continue with geometry loading even if analysis fails
-              }
+              console.log('STLLoader: Geometry loaded, feature analysis will be done via ML analyzer');
+              
+              // Create basic analysis results for compatibility
+              const analysisResults = {
+                fileName: file.name,
+                fileSize: file.size,
+                originalGeometry: geometry,
+                detectedFeatures: [], // Empty - features will be detected by ML
+                triangleCount: geometry.attributes.position.count / 3,
+                boundingBox: geometry.boundingBox,
+                analysisTime: Date.now(),
+                mlReady: true
+              };
+              
+              onFeaturesAnalyzed([], analysisResults);
             }
             
             onGeometryLoaded(geometry);

@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
-import { EnhancedFeatureDetection } from './EnhancedFeatureDetection';
+import EnhancedMLFeatureDetection from './EnhancedMLFeatureDetection';
 import Model3DViewer from './Model3DViewer';
 import { Eye, EyeOff, Settings, ChevronRight } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface Feature {
 
 interface FeatureDetectionProps {
   analysisResults: any;
-  onFeaturesSelected: (features: Feature[]) => void;
+  onFeaturesSelected: (features: any[]) => void;
   uploadedFile?: File;
   analyzedFeatures?: Feature[];
 }
@@ -149,147 +149,11 @@ const FeatureDetection = ({ analysisResults, onFeaturesSelected, uploadedFile, a
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">Feature Detection Results</h2>
-            <p className="text-muted-foreground">
-              {features.length} features detected with AI confidence scoring
-            </p>
-          </div>
-          <Badge variant="outline" className="bg-success/10">
-            Analysis Complete
-          </Badge>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          {Object.entries(
-            features.reduce((acc, feature) => {
-              acc[feature.type] = (acc[feature.type] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>)
-          ).map(([type, count]) => (
-            <Card key={type} className="p-4 text-center">
-              <div className={`w-8 h-8 rounded-full ${getFeatureColor(type)} mx-auto mb-2 flex items-center justify-center text-white`}>
-                {getFeatureIcon(type)}
-              </div>
-              <h3 className="font-semibold capitalize">{type}s</h3>
-              <p className="text-2xl font-bold text-primary">{count}</p>
-            </Card>
-          ))}
-        </div>
-
-        <Tabs defaultValue="list" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="list">Feature List</TabsTrigger>
-            <TabsTrigger value="3d">3D View</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="list" className="space-y-4">
-            <div className="flex items-center space-x-2 mb-4 p-3 bg-muted/50 rounded-lg">
-              <Checkbox
-                id="select-all"
-                checked={isAllSelected}
-                onCheckedChange={toggleSelectAll}
-                ref={checkboxRef}
-              />
-              <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
-                Select All Features ({features.length})
-              </label>
-            </div>
-            {Object.entries(featuresByType).map(([type, typeFeatures]) => (
-              <div key={type} className="space-y-2">
-                <h3 className="font-semibold capitalize text-lg">{type}s</h3>
-                {typeFeatures.map((feature) => (
-                  <Card 
-                    key={feature.id}
-                    className={`p-4 cursor-pointer transition-all hover:shadow-soft ${
-                      selectedFeatures.includes(feature.id) ? 'ring-2 ring-primary' : ''
-                    }`}
-                    onClick={() => toggleFeatureSelection(feature.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className={`w-3 h-3 rounded-full ${getFeatureColor(feature.type)}`}></div>
-                        <div>
-                          <h4 className="font-semibold">{feature.id}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {feature.dimensions && Object.keys(feature.dimensions).length > 0 ? 
-                              Object.entries(feature.dimensions).map(([key, value]) => 
-                                `${key}: ${typeof value === 'number' ? value.toFixed(1) : value}mm`
-                              ).join(", ") : 
-                              "No dimensions available"
-                            }
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <Badge variant="outline">
-                          {Math.round(feature.confidence * 100)}% confidence
-                        </Badge>
-                        <Badge className="bg-accent">
-                          {feature.toolRecommendation}
-                        </Badge>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFeatureVisibility(feature.id);
-                          }}
-                        >
-                          {feature.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ))}
-          </TabsContent>
-          
-          <TabsContent value="3d">
-            <Card className="p-6">
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold mb-2">3D Model View</h3>
-                <p className="text-sm text-muted-foreground">
-                  Click features to select them. Use mouse to orbit, scroll to zoom.
-                </p>
-              </div>
-              
-              <Model3DViewer
-                features={features}
-                selectedFeatures={selectedFeatures}
-                onFeatureClick={toggleFeatureSelection}
-                analysisResults={analysisResults}
-                uploadedFile={uploadedFile}
-              />
-              
-              <div className="flex justify-center space-x-2 mt-4">
-                <Button variant="outline" size="sm">
-                  <Settings className="w-4 h-4 mr-2" />
-                  View Options
-                </Button>
-                <Button variant="outline" size="sm">Reset View</Button>
-                <Button variant="outline" size="sm">Export View</Button>
-              </div>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        <div className="flex justify-between items-center mt-6 pt-6 border-t">
-          <p className="text-sm text-muted-foreground">
-            {selectedFeatures.length} of {features.length} features selected
-          </p>
-          <Button 
-            onClick={handleProceedToTooling}
-            disabled={selectedFeatures.length === 0}
-            className="bg-gradient-primary hover:shadow-medium transition-spring"
-          >
-            Proceed to Tool Assignment
-          </Button>
-        </div>
-      </Card>
+      {/* Use Enhanced ML Feature Detection instead of old system */}
+      <EnhancedMLFeatureDetection
+        geometry={analysisResults?.originalGeometry}
+        onFeaturesSelected={onFeaturesSelected}
+      />
     </div>
   );
 };

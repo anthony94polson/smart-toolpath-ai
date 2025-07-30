@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import STLLoaderComponent from './STLLoader';
 
 interface Model3DViewerProps {
+  geometry?: THREE.BufferGeometry;
   features: Array<{
     id: string;
     type: string;
@@ -12,13 +13,13 @@ interface Model3DViewerProps {
     dimensions: { [key: string]: number };
     visible: boolean;
   }>;
-  selectedFeatures: string[];
+  selectedFeatureIds: string[];
   onFeatureClick?: (featureId: string) => void;
   analysisResults?: any;
   uploadedFile?: File;
 }
 
-const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisResults, uploadedFile }: Model3DViewerProps) => {
+const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick, analysisResults, uploadedFile }: Model3DViewerProps) => {
   const [stlGeometry, setStlGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [loadingError, setLoadingError] = useState<string>('');
 
@@ -194,9 +195,9 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
           <Environment preset="studio" />
           
           {/* STL geometry */}
-          {stlGeometry ? (
+          {stlGeometry || geometry ? (
             <mesh position={[0, 0, 0]}>
-              <primitive object={stlGeometry} />
+              <primitive object={stlGeometry || geometry} />
               <primitive object={partMaterial} />
             </mesh>
           ) : (
@@ -212,7 +213,7 @@ const Model3DViewer = ({ features, selectedFeatures, onFeatureClick, analysisRes
             <Feature3D
               key={feature.id}
               feature={feature}
-              isSelected={selectedFeatures.includes(feature.id)}
+              isSelected={selectedFeatureIds.includes(feature.id)}
             />
           ))}
         </Suspense>
