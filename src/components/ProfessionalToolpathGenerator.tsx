@@ -474,7 +474,7 @@ export class ProfessionalToolpathGenerator {
 
       // Helical entry for first pass, ramp for subsequent passes
       if (pass === 0) {
-        const helicalSegments = this.generateHelicalEntry(center, zLevel, tool.diameter / 2, params);
+        const helicalSegments = this.generateHelicalEntrySegments(center, zLevel, tool.diameter / 2, params);
         toolpath.push(...helicalSegments);
       } else {
         const rampSegments = this.generateRampEntry(center, zLevel, tool.diameter, params);
@@ -556,7 +556,7 @@ export class ProfessionalToolpathGenerator {
     return segments;
   }
 
-  private generateHelicalEntry(
+  private generateHelicalEntrySegments(
     center: THREE.Vector3,
     targetZ: number,
     radius: number,
@@ -926,5 +926,57 @@ export class ProfessionalToolpathGenerator {
   private addSetupOperations(operations: MachiningOperation[]): MachiningOperation[] {
     // Add tool change operations, coordinate system setup, etc.
     return operations; // Simplified for now
+  }
+
+  private generateCircularPath(center: THREE.Vector3, radius: number, numPoints: number): THREE.Vector3[] {
+    const points: THREE.Vector3[] = [];
+    for (let i = 0; i <= numPoints; i++) {
+      const angle = (i / numPoints) * Math.PI * 2;
+      points.push(new THREE.Vector3(
+        center.x + Math.cos(angle) * radius,
+        center.y + Math.sin(angle) * radius,
+        center.z
+      ));
+    }
+    return points;
+  }
+
+  private generateHelicalEntry(
+    center: THREE.Vector3, 
+    radius: number, 
+    startZ: number, 
+    endZ: number, 
+    numPoints: number
+  ): THREE.Vector3[] {
+    const points: THREE.Vector3[] = [];
+    const totalDepth = startZ - endZ;
+    
+    for (let i = 0; i <= numPoints; i++) {
+      const progress = i / numPoints;
+      const angle = progress * Math.PI * 2; // One full revolution
+      const z = startZ - (progress * totalDepth);
+      
+      points.push(new THREE.Vector3(
+        center.x + Math.cos(angle) * radius,
+        center.y + Math.sin(angle) * radius,
+        z
+      ));
+    }
+    return points;
+  }
+
+  private generateRectangularPath(center: THREE.Vector3, dimensions: any, z: number): THREE.Vector3[] {
+    const width = dimensions.width || 10;
+    const length = dimensions.length || 10;
+    const halfWidth = width / 2;
+    const halfLength = length / 2;
+    
+    return [
+      new THREE.Vector3(center.x - halfWidth, center.y - halfLength, z),
+      new THREE.Vector3(center.x + halfWidth, center.y - halfLength, z),
+      new THREE.Vector3(center.x + halfWidth, center.y + halfLength, z),
+      new THREE.Vector3(center.x - halfWidth, center.y + halfLength, z),
+      new THREE.Vector3(center.x - halfWidth, center.y - halfLength, z) // Close the loop
+    ];
   }
 }

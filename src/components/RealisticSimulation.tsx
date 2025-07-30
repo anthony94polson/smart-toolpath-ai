@@ -11,11 +11,54 @@ console.log('RealisticSimulation module loading...');
 
 interface RealisticSimulationProps {
   geometry: THREE.BufferGeometry | null;
-  toolpaths: any[];
+  operations?: any[]; // MachiningOperation array
+  toolpaths?: any[]; // Legacy format support
   simulationTime: number;
 }
 
-// Group toolpaths by operation type
+// Convert MachiningOperations to visualization format
+const prepareOperationsForVisualization = (operations: any[]) => {
+  console.log(`🔄 Preparing ${operations.length} operations for visualization`);
+  
+  return operations.map(operation => {
+    const toolpathPoints = [];
+    
+    // Convert toolpath segments to points
+    if (operation.toolpath && operation.toolpath.length > 0) {
+      operation.toolpath.forEach((segment: any) => {
+        toolpathPoints.push({
+          x: segment.startPoint.x,
+          y: segment.startPoint.y,
+          z: segment.startPoint.z
+        });
+        toolpathPoints.push({
+          x: segment.endPoint.x,
+          y: segment.endPoint.y,
+          z: segment.endPoint.z
+        });
+      });
+    }
+    
+    console.log(`Operation ${operation.id}: ${toolpathPoints.length} points generated`);
+    
+    return {
+      id: operation.id,
+      name: operation.type,
+      type: operation.type,
+      toolpaths: [{
+        points: toolpathPoints,
+        segments: operation.toolpath || [],
+        toolDiameter: operation.tool.diameter,
+        toolType: operation.tool.type
+      }],
+      visible: true,
+      color: getOperationColor(operation.type),
+      feature: operation.feature
+    };
+  });
+};
+
+// Legacy: Group toolpaths by operation type
 const groupToolpathsByOperation = (toolpaths: any[]) => {
   const operations = new Map();
   
@@ -39,12 +82,19 @@ const getOperationColor = (operation: string) => {
   const colors = {
     'rough': '#ef4444', // Red
     'finish': '#22c55e', // Green
+    'drilling': '#3b82f6', // Blue
     'drill': '#3b82f6', // Blue
     'pocket': '#f59e0b', // Orange
+    'pocketing': '#f59e0b', // Orange
     'slot': '#8b5cf6', // Purple
-    'chamfer': '#06b6d4' // Cyan
+    'chamfer': '#06b6d4', // Cyan
+    'counterbore': '#ec4899', // Pink
+    'countersink': '#8b5cf6', // Purple
+    'taper_hole': '#10b981', // Emerald
+    'fillet': '#f97316', // Orange
+    'island': '#84cc16' // Lime
   };
-  return colors[operation as keyof typeof colors] || '#6b7280';
+  return colors[operation.toLowerCase() as keyof typeof colors] || '#6b7280';
 };
 
 // 3D Model Component
@@ -63,7 +113,7 @@ const Model3D = ({ geometry }: { geometry: THREE.BufferGeometry | null }) => {
   );
 };
 
-// Toolpath Visualization Component
+// Enhanced Toolpath Visualization Component
 const ToolpathVisualization = ({ 
   operations, 
   visibleOperations 
@@ -77,34 +127,72 @@ const ToolpathVisualization = ({
         if (!visibleOperations.has(operation.name)) return null;
         
         return (
-          <group key={operation.name}>
-            {operation.toolpaths.map((toolpath: any) => {
-              const points = toolpath.points.map((point: any) => 
-                new THREE.Vector3(point.x, point.y, point.z)
-              );
-              
-              if (points.length < 2) return null;
-              
-              const curve = new THREE.CatmullRomCurve3(points);
-              const geometry = new THREE.TubeGeometry(
-                curve, 
-                points.length * 2, 
-                0.05, 
-                8, 
-                false
-              );
-              
-              return (
-                <mesh key={toolpath.index} geometry={geometry}>
-                  <meshStandardMaterial 
-                    color={operation.color}
-                    emissive={operation.color}
-                    emissiveIntensity={0.2}
-                    transparent
-                    opacity={0.8}
-                  />
-                </mesh>
-              );
+          <group key={operation.id || operation.name}>
+            {operation.toolpaths.map((toolpath: any, toolpathIndex: number) => {
+              // Render individual toolpath segments for better visualization
+              if (toolpath.segments && toolpath.segments.length > 0) {
+                return toolpath.segments.map((segment: any, segmentIndex: number) => {
+                  const startPoint = new THREE.Vector3(
+                    segment.startPoint.x,
+                    segment.startPoint.y,
+                    segment.startPoint.z
+                  );
+                  const endPoint = new THREE.Vector3(
+                    segment.endPoint.x,
+                    segment.endPoint.y,
+                    segment.endPoint.z
+                  );
+                  
+                  // Different visualization for different segment types
+                  const lineWidth = segment.type === 'rapid' ? 0.02 : 0.08;
+                  const opacity = segment.type === 'rapid' ? 0.3 : 0.9;
+                  const color = segment.type === 'rapid' ? '#888888' : operation.color;
+                  
+                  const points = [startPoint, endPoint];
+                  const curve = new THREE.CatmullRomCurve3(points);
+                  const geometry = new THREE.TubeGeometry(curve, 2, lineWidth, 6, false);
+                  
+                  return (
+                    <mesh key={`${operation.id}-${toolpathIndex}-${segmentIndex}`} geometry={geometry}>
+                      <meshStandardMaterial 
+                        color={color}
+                        emissive={color}
+                        emissiveIntensity={segment.type === 'rapid' ? 0.0 : 0.3}
+                        transparent
+                        opacity={opacity}
+                      />
+                    </mesh>
+                  );
+                });
+              } else {
+                // Fallback to points-based rendering
+                const points = toolpath.points?.map((point: any) => 
+                  new THREE.Vector3(point.x, point.y, point.z)
+                ) || [];
+                
+                if (points.length < 2) return null;
+                
+                const curve = new THREE.CatmullRomCurve3(points);
+                const geometry = new THREE.TubeGeometry(
+                  curve, 
+                  Math.max(points.length * 2, 20), 
+                  0.08, 
+                  8, 
+                  false
+                );
+                
+                return (
+                  <mesh key={`${operation.id}-${toolpathIndex}-fallback`} geometry={geometry}>
+                    <meshStandardMaterial 
+                      color={operation.color}
+                      emissive={operation.color}
+                      emissiveIntensity={0.3}
+                      transparent
+                      opacity={0.9}
+                    />
+                  </mesh>
+                );
+              }
             })}
           </group>
         );
@@ -150,17 +238,22 @@ const Scene3D = ({
 
 const RealisticSimulation: React.FC<RealisticSimulationProps> = ({
   geometry,
+  operations: machiningOperations = [],
   toolpaths = [],
   simulationTime
 }) => {
-  console.log('RealisticSimulation: Received', toolpaths.length, 'toolpaths');
+  console.log('RealisticSimulation: Received', machiningOperations.length, 'operations and', toolpaths.length, 'legacy toolpaths');
   
-  const operations = groupToolpathsByOperation(toolpaths);
+  // Use new operations format if available, otherwise fall back to legacy
+  const operations = machiningOperations.length > 0 
+    ? prepareOperationsForVisualization(machiningOperations)
+    : groupToolpathsByOperation(toolpaths);
+    
   const [visibleOperations, setVisibleOperations] = useState<Set<string>>(
     new Set(operations.map(op => op.name))
   );
   
-  console.log('RealisticSimulation: Created', operations.length, 'operation groups');
+  console.log('RealisticSimulation: Prepared', operations.length, 'operation groups for visualization');
 
   const toggleOperationVisibility = (operationName: string) => {
     setVisibleOperations(prev => {

@@ -31,7 +31,7 @@ export interface Edge {
 
 export interface MachinableFeature {
   id: string;
-  type: 'hole' | 'pocket' | 'slot' | 'chamfer' | 'step' | 'boss' | 'rib';
+  type: 'hole' | 'pocket' | 'slot' | 'chamfer' | 'step' | 'boss' | 'rib' | 'counterbore' | 'countersink' | 'taper_hole' | 'fillet' | 'island';
   confidence: number;
   faces: Face[];
   edges: Edge[];
@@ -196,16 +196,26 @@ export class AdvancedSTLAnalyzer {
   public analyzeMachinableFeatures(): MachinableFeature[] {
     const features: MachinableFeature[] = [];
     
-    // Detect different types of features
+    console.log('🔍 Starting comprehensive feature detection...');
+    
+    // Detect different types of features based on reference image
     features.push(...this.detectHoles());
+    features.push(...this.detectCounterbores());
+    features.push(...this.detectCountersinks());
+    features.push(...this.detectTaperHoles());
     features.push(...this.detectPockets());
     features.push(...this.detectSlots());
     features.push(...this.detectChamfers());
+    features.push(...this.detectFillets());
     features.push(...this.detectSteps());
     features.push(...this.detectBosses());
     features.push(...this.detectRibs());
+    features.push(...this.detectIslands());
 
-    return features.filter(f => f.confidence > 0.7);
+    console.log(`✅ Feature detection complete: ${features.length} features found`);
+    features.forEach(f => console.log(`  - ${f.type.toUpperCase()}: ${f.id} (confidence: ${f.confidence.toFixed(2)})`));
+
+    return features.filter(f => f.confidence > 0.6); // Lower threshold for more detection
   }
 
   private detectHoles(): MachinableFeature[] {
@@ -786,5 +796,256 @@ export class AdvancedSTLAnalyzer {
   private calculateStepBoundingBox(upperFace: Face, lowerFace: Face): THREE.Box3 {
     const box = new THREE.Box3().setFromPoints([...upperFace.vertices, ...lowerFace.vertices]);
     return box;
+  }
+
+  // Additional feature detection methods based on reference image
+  private detectCounterbores(): MachinableFeature[] {
+    const counterbores: MachinableFeature[] = [];
+    const holes = this.detectHoles();
+    
+    // Look for larger circular features connected to smaller holes
+    for (const hole of holes) {
+      const nearbyLoops = this.findCircularEdgeLoops().filter(loop => 
+        loop.center.distanceTo(hole.position) < (hole.dimensions.diameter || 0) * 2 &&
+        (loop.radius || 0) > (hole.dimensions.diameter || 0) / 2 * 1.5
+      );
+      
+      for (const loop of nearbyLoops) {
+        if (!loop.radius) continue;
+        const cboreDepth = Math.abs(loop.center.z - hole.position.z);
+        
+        if (cboreDepth > 1 && cboreDepth < hole.dimensions.diameter * 2) {
+          counterbores.push({
+            id: `CBORE_${counterbores.length + 1}`,
+            type: 'counterbore',
+            confidence: 0.85,
+            faces: [...hole.faces],
+            edges: [...hole.edges, ...loop.edges],
+            loops: [loop],
+            dimensions: { 
+              diameter: hole.dimensions.diameter,
+              cbore_diameter: loop.radius * 2,
+              cbore_depth: cboreDepth,
+              total_depth: hole.dimensions.depth + cboreDepth
+            },
+            position: hole.position,
+            normal: hole.normal,
+            boundingBox: hole.boundingBox,
+            depth: hole.dimensions.depth + cboreDepth,
+            accessibility: hole.accessibility,
+            machiningParameters: {
+              stockToLeave: 0,
+              requiredTolerance: 0.02,
+              surfaceFinish: 'excellent'
+            }
+          });
+        }
+      }
+    }
+    
+    return counterbores;
+  }
+
+  private detectCountersinks(): MachinableFeature[] {
+    const countersinks: MachinableFeature[] = [];
+    const holes = this.detectHoles();
+    const angledFaces = this.getAngledFaces();
+    
+    for (const hole of holes) {
+      // Look for angled faces around hole entrance
+      const nearbyAngledFaces = angledFaces.filter(face => 
+        face.centroid.distanceTo(hole.position) < (hole.dimensions.diameter || 0) * 1.5
+      );
+      
+      for (const face of nearbyAngledFaces) {
+        const angle = Math.acos(Math.abs(face.normal.z)) * 180 / Math.PI;
+        
+        // Typical countersink angles: 60°, 82°, 90°, 100°, 120°
+        const standardAngles = [60, 82, 90, 100, 120];
+        const closestAngle = standardAngles.reduce((prev, curr) => 
+          Math.abs(curr - angle) < Math.abs(prev - angle) ? curr : prev
+        );
+        
+        if (Math.abs(angle - closestAngle) < 5) {
+          countersinks.push({
+            id: `CSINK_${countersinks.length + 1}`,
+            type: 'countersink',
+            confidence: 0.9,
+            faces: [...hole.faces, face],
+            edges: hole.edges,
+            loops: hole.loops,
+            dimensions: {
+              diameter: hole.dimensions.diameter,
+              csink_angle: closestAngle,
+              csink_diameter: hole.dimensions.diameter * 2
+            },
+            position: hole.position,
+            normal: hole.normal,
+            boundingBox: hole.boundingBox,
+            depth: hole.dimensions.depth,
+            accessibility: hole.accessibility,
+            machiningParameters: {
+              stockToLeave: 0,
+              requiredTolerance: 0.01,
+              surfaceFinish: 'excellent'
+            }
+          });
+        }
+      }
+    }
+    
+    return countersinks;
+  }
+
+  private detectTaperHoles(): MachinableFeature[] {
+    const taperHoles: MachinableFeature[] = [];
+    const circularLoops = this.findCircularEdgeLoops();
+    
+    // Group loops by proximity to detect tapered holes
+    for (let i = 0; i < circularLoops.length; i++) {
+      for (let j = i + 1; j < circularLoops.length; j++) {
+        const loop1 = circularLoops[i];
+        const loop2 = circularLoops[j];
+        
+        if (!loop1.radius || !loop2.radius) continue;
+        
+        const distance = loop1.center.distanceTo(loop2.center);
+        const heightDiff = Math.abs(loop1.center.z - loop2.center.z);
+        const radiiDiff = Math.abs(loop1.radius - loop2.radius);
+        
+        // Check if loops are vertically aligned with different radii
+        if (distance < Math.max(loop1.radius, loop2.radius) && 
+            heightDiff > 2 && 
+            radiiDiff > 0.5) {
+          
+          const topLoop = loop1.center.z > loop2.center.z ? loop1 : loop2;
+          const bottomLoop = loop1.center.z > loop2.center.z ? loop2 : loop1;
+          const taperAngle = Math.atan(radiiDiff / heightDiff) * 180 / Math.PI;
+          
+          taperHoles.push({
+            id: `TAPER_${taperHoles.length + 1}`,
+            type: 'taper_hole',
+            confidence: 0.85,
+            faces: [],
+            edges: [...topLoop.edges, ...bottomLoop.edges],
+            loops: [topLoop, bottomLoop],
+            dimensions: {
+              top_diameter: topLoop.radius * 2,
+              bottom_diameter: bottomLoop.radius * 2,
+              depth: heightDiff,
+              taper_angle: taperAngle
+            },
+            position: bottomLoop.center,
+            normal: new THREE.Vector3(0, 0, 1),
+            boundingBox: new THREE.Box3().setFromPoints([...topLoop.vertices, ...bottomLoop.vertices]),
+            depth: heightDiff,
+            accessibility: {
+              topAccess: true,
+              sideAccess: false,
+              recommendedTool: 'taper_reamer',
+              minimumToolDiameter: Math.min(topLoop.radius, bottomLoop.radius) * 1.8
+            },
+            machiningParameters: {
+              stockToLeave: 0,
+              requiredTolerance: 0.02,
+              surfaceFinish: 'good'
+            }
+          });
+        }
+      }
+    }
+    
+    return taperHoles;
+  }
+
+  private detectFillets(): MachinableFeature[] {
+    const fillets: MachinableFeature[] = [];
+    const edges = this.edges.filter(e => !e.isSharp && e.angle < Math.PI / 3);
+    
+    for (const edge of edges) {
+      if (edge.length > 2 && edge.length < 50) {
+        const radius = this.estimateFilletRadius(edge);
+        
+        if (radius > 0.5 && radius < 10) {
+          fillets.push({
+            id: `FILLET_${fillets.length + 1}`,
+            type: 'fillet',
+            confidence: 0.8,
+            faces: [edge.face1, ...(edge.face2 ? [edge.face2] : [])],
+            edges: [edge],
+            loops: [],
+            dimensions: { radius, length: edge.length },
+            position: new THREE.Vector3().addVectors(edge.vertex1, edge.vertex2).divideScalar(2),
+            normal: edge.face1.normal,
+            boundingBox: new THREE.Box3().setFromPoints([edge.vertex1, edge.vertex2]),
+            depth: radius,
+            accessibility: {
+              topAccess: false,
+              sideAccess: true,
+              recommendedTool: 'ball_end_mill',
+              minimumToolDiameter: radius * 1.5
+            },
+            machiningParameters: {
+              stockToLeave: 0.05,
+              requiredTolerance: 0.01,
+              surfaceFinish: 'excellent'
+            }
+          });
+        }
+      }
+    }
+    
+    return fillets;
+  }
+
+  private detectIslands(): MachinableFeature[] {
+    const islands: MachinableFeature[] = [];
+    const horizontalFaces = this.getHorizontalFaces();
+    
+    for (const face of horizontalFaces) {
+      const surroundingHeight = this.getAverageSurroundingHeight(face);
+      const isRaised = face.centroid.z > surroundingHeight + 2;
+      const boundary = this.extractFaceBoundary(face);
+      const area = face.area;
+      
+      // Islands are raised features surrounded by lower material
+      if (isRaised && area > 10 && area < 500) {
+        const dimensions = this.calculatePocketDimensions(boundary);
+        const height = face.centroid.z - surroundingHeight;
+        
+        islands.push({
+          id: `ISLAND_${islands.length + 1}`,
+          type: 'island',
+          confidence: 0.8,
+          faces: [face, ...this.getAdjacentVerticalFaces(face)],
+          edges: this.getEdgesAroundFace(face),
+          loops: [{ vertices: boundary, edges: [], isClosed: true, center: face.centroid, confidence: 0.8 }],
+          dimensions: { ...dimensions, height },
+          position: face.centroid,
+          normal: face.normal,
+          boundingBox: this.calculateFaceBoundingBox(face),
+          depth: height,
+          accessibility: {
+            topAccess: false,
+            sideAccess: true,
+            recommendedTool: 'end_mill',
+            minimumToolDiameter: Math.min(dimensions.width, dimensions.length) * 0.1
+          },
+          machiningParameters: {
+            stockToLeave: 0.1,
+            requiredTolerance: 0.05,
+            surfaceFinish: 'good'
+          }
+        });
+      }
+    }
+    
+    return islands;
+  }
+
+  private estimateFilletRadius(edge: Edge): number {
+    // Simplified radius estimation based on edge curvature
+    // In a real implementation, this would analyze the curvature more precisely
+    return edge.length * 0.1; // Approximate based on edge length
   }
 }

@@ -366,16 +366,7 @@ const ToolpathGeneration = ({ toolAssignments, onSimulationComplete, uploadedFil
                 <div className="h-[600px]">
                   <RealisticSimulation 
                     geometry={originalGeometry || null}
-                    toolpaths={operations.map(op => ({
-                      operation: op.type.toLowerCase(),
-                      points: op._productionData?.toolpath?.map((seg: any) => ({
-                        x: seg.startPoint.x,
-                        y: seg.startPoint.y,
-                        z: seg.startPoint.z
-                      })) || [],
-                      toolDiameter: op._productionData?.tool?.diameter || 6,
-                      toolType: op._productionData?.tool?.type || 'endmill'
-                    }))}
+                    operations={operations.filter(op => op._productionData?.toolpath?.length > 0)}
                     simulationTime={totalEstimatedTime * 60}
                   />
                 </div>
