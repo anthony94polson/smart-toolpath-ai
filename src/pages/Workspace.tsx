@@ -5,8 +5,11 @@ import FeatureDetection from "@/components/FeatureDetection";
 import ToolLibrary from "@/components/ToolLibrary";
 import ToolpathGeneration from "@/components/ToolpathGeneration";
 import SimulationResults from "@/components/SimulationResults";
+import { ModelConverter } from "@/components/ModelConverter";
+import { OnnxAAGNetAnalyzer } from "@/components/OnnxAAGNetAnalyzer";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type WorkflowStep = "upload" | "features" | "tools" | "toolpaths" | "results";
 
@@ -119,7 +122,27 @@ const Workspace = () => {
         {/* Current Step Content */}
         <div className="space-y-6">
           {currentStep === "upload" && (
-            <FileUpload onFileUploaded={handleFileUploaded} />
+            <div className="space-y-6">
+              <Tabs defaultValue="upload" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="upload">Upload STL</TabsTrigger>
+                  <TabsTrigger value="converter">Model Converter</TabsTrigger>
+                  <TabsTrigger value="onnx">ONNX Analyzer</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="upload" className="space-y-4">
+                  <FileUpload onFileUploaded={handleFileUploaded} />
+                </TabsContent>
+                
+                <TabsContent value="converter" className="space-y-4">
+                  <ModelConverter />
+                </TabsContent>
+                
+                <TabsContent value="onnx" className="space-y-4">
+                  <OnnxAAGNetAnalyzer />
+                </TabsContent>
+              </Tabs>
+            </div>
           )}
           
           {currentStep === "features" && analysisResults && (

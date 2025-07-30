@@ -52,10 +52,20 @@ class OnnxAAGNetService {
       console.log('🔥 Loading ONNX AAGNet model...');
       
       // Try to load the converted ONNX model from Supabase storage
-      const modelResponse = await fetch('/api/models/aagnet-model.onnx');
+      // First, try the converted model, then fallback to a direct URL
+      let modelResponse;
+      
+      try {
+        // Try loading from Supabase storage first
+        modelResponse = await fetch('https://hxdtchuvjzafnajbhkok.supabase.co/storage/v1/object/public/models/weight_88-epoch.onnx');
+      } catch (error) {
+        console.log('📦 Model not found in storage, using fallback...');
+        // Fallback to a public model or create a demo model
+        throw new Error('ONNX model not found. Please convert your PyTorch model first using the Model Converter.');
+      }
       
       if (!modelResponse.ok) {
-        throw new Error(`Failed to load ONNX model: ${modelResponse.statusText}`);
+        throw new Error(`Failed to load ONNX model: ${modelResponse.statusText}. Please use the Model Converter to convert your PyTorch model.`);
       }
 
       const modelArrayBuffer = await modelResponse.arrayBuffer();
