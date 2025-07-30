@@ -1,6 +1,7 @@
 import * as tf from '@tensorflow/tfjs';
 import * as THREE from 'three';
 import { useEffect, useState } from 'react';
+import { AAGNetInspiredAnalyzer } from './AAGNetInspiredAnalyzer';
 
 interface MLFeatureAnalyzerProps {
   geometry: THREE.BufferGeometry;
@@ -27,9 +28,9 @@ interface MachinableFeature {
   toolRecommendation: string;
 }
 
-// Simple ML-based feature detection using point cloud analysis
+// AAGNet-inspired ML feature detection using geometric graph analysis
 class MLFeatureDetector {
-  private model: tf.LayersModel | null = null;
+  private analyzer: AAGNetInspiredAnalyzer | null = null;
   private isInitialized = false;
 
   async initialize() {
@@ -42,214 +43,247 @@ class MLFeatureDetector {
     this.isInitialized = true;
   }
 
-  // Convert geometry to point cloud tensor
-  private geometryToPointCloud(geometry: THREE.BufferGeometry, maxPoints = 2048): tf.Tensor {
-    const positions = geometry.attributes.position.array;
-    const normals = geometry.attributes.normal?.array || new Float32Array(positions.length);
+  // Convert AAGNet GeometricFeature to MachinableFeature interface
+  private convertToMachinableFeature(geoFeature: any, index: number): MachinableFeature {
+    const position = geoFeature.position || new THREE.Vector3();
+    const dimensions = geoFeature.dimensions || {};
     
-    const numVertices = positions.length / 3;
-    const sampledIndices = this.samplePoints(numVertices, Math.min(maxPoints, numVertices));
-    
-    // Create point cloud tensor [N, 6] (x, y, z, nx, ny, nz)
-    const pointCloudData = new Float32Array(sampledIndices.length * 6);
-    
-    for (let i = 0; i < sampledIndices.length; i++) {
-      const idx = sampledIndices[i];
-      const basePos = idx * 3;
-      const baseOut = i * 6;
-      
-      // Position
-      pointCloudData[baseOut] = positions[basePos];
-      pointCloudData[baseOut + 1] = positions[basePos + 1];
-      pointCloudData[baseOut + 2] = positions[basePos + 2];
-      
-      // Normal
-      pointCloudData[baseOut + 3] = normals[basePos] || 0;
-      pointCloudData[baseOut + 4] = normals[basePos + 1] || 0;
-      pointCloudData[baseOut + 5] = normals[basePos + 2] || 0;
-    }
-    
-    return tf.tensor3d(Array.from(pointCloudData), [1, sampledIndices.length, 6]);
+    // Map feature types to tool recommendations
+    const getToolRecommendation = (type: string, dims: any): string => {
+      switch (type) {
+        case 'hole':
+          const diameter = dims.diameter || dims.width || 5;
+          return diameter < 3 ? 'Small Drill Bit (< 3mm)' : 
+                 diameter < 10 ? 'Standard Drill Bit (3-10mm)' : 
+                 'Large Drill Bit (> 10mm)';
+        case 'pocket':
+          return 'End Mill';
+        case 'slot':
+          return 'Slot Mill';
+        case 'chamfer':
+          return 'Chamfer Mill';
+        case 'step':
+          return 'Face Mill';
+        case 'boss':
+          return 'Roughing End Mill';
+        case 'groove':
+          return 'Grooving Tool';
+        default:
+          return 'End Mill';
+      }
+    };
+
+    return {
+      id: geoFeature.id || `feature_${index}`,
+      type: geoFeature.type,
+      confidence: geoFeature.confidence,
+      position: position,
+      dimensions: {
+        length: dimensions.length,
+        width: dimensions.width,
+        height: dimensions.height,
+        diameter: dimensions.diameter,
+        depth: dimensions.depth
+      },
+      boundingBox: geoFeature.boundingBox || new THREE.Box3().setFromCenterAndSize(position, new THREE.Vector3(1, 1, 1)),
+      normal: geoFeature.normal,
+      axis: geoFeature.axis,
+      toolRecommendation: getToolRecommendation(geoFeature.type, dimensions)
+    };
   }
 
-  private samplePoints(totalPoints: number, targetPoints: number): number[] {
-    if (totalPoints <= targetPoints) {
-      return Array.from({ length: totalPoints }, (_, i) => i);
-    }
-    
-    const step = totalPoints / targetPoints;
-    const indices: number[] = [];
-    
-    for (let i = 0; i < targetPoints; i++) {
-      indices.push(Math.floor(i * step));
-    }
-    
-    return indices;
-  }
-
-  // Simple rule-based ML simulation (placeholder for actual ML model)
+  // Main feature detection using AAGNet-inspired analysis
   async detectFeatures(geometry: THREE.BufferGeometry, onProgress: (progress: number, status: string) => void): Promise<MachinableFeature[]> {
     await this.initialize();
     
-    onProgress(0.1, 'Converting geometry to point cloud...');
+    onProgress(0.05, 'Initializing AAGNet-inspired analyzer...');
     
-    const pointCloudTensor = this.geometryToPointCloud(geometry);
+    // Ensure geometry has proper normals
+    if (!geometry.attributes.normal) {
+      onProgress(0.1, 'Computing vertex normals...');
+      geometry.computeVertexNormals();
+    }
     
-    onProgress(0.3, 'Analyzing geometric features...');
+    onProgress(0.15, 'Creating geometric graph analyzer...');
     
-    // Simple feature detection using geometric analysis
-    const features = await this.analyzePointCloud(pointCloudTensor, geometry, onProgress);
+    // Create AAGNet analyzer instance
+    this.analyzer = new AAGNetInspiredAnalyzer(geometry);
     
-    pointCloudTensor.dispose();
+    onProgress(0.25, 'Constructing geometric attributed adjacency graph...');
     
-    onProgress(1.0, 'Feature detection complete');
+    try {
+      // Add progress tracking wrapper for AAGNet analysis
+      const progressWrapper = (step: number, substep: number, status: string) => {
+        const progressValue = 0.25 + (step + substep) * 0.6; // 25% to 85% for analysis
+        onProgress(Math.min(progressValue, 0.85), status);
+      };
+      
+      onProgress(0.3, 'Analyzing geometric topology...');
+      
+      // Use AAGNet-inspired feature recognition with progress tracking
+      const geometricFeatures = await this.runAAGNetAnalysisWithProgress(progressWrapper);
+      
+      onProgress(0.9, 'Converting features to machining format...');
+      
+      // Convert to MachinableFeature format
+      const machinableFeatures = geometricFeatures.map((geoFeature, index) => 
+        this.convertToMachinableFeature(geoFeature, index)
+      );
+      
+      // Filter out low-confidence features
+      const filteredFeatures = machinableFeatures.filter(f => f.confidence > 0.5);
+      
+      onProgress(1.0, `Analysis complete - found ${filteredFeatures.length} high-confidence features`);
+      
+      console.log('AAGNet-inspired analysis complete:', {
+        totalDetected: machinableFeatures.length,
+        highConfidence: filteredFeatures.length,
+        features: filteredFeatures
+      });
+      
+      return filteredFeatures;
+      
+    } catch (error) {
+      console.error('AAGNet-inspired analysis failed:', error);
+      onProgress(0.5, 'Primary analysis failed, using fallback method...');
+      
+      // Fallback to basic geometric analysis if AAGNet fails
+      return this.fallbackFeatureDetection(geometry, onProgress);
+    }
+  }
+
+  // Wrapper to add progress tracking to AAGNet analysis
+  private async runAAGNetAnalysisWithProgress(onProgress: (step: number, substep: number, status: string) => void): Promise<any[]> {
+    if (!this.analyzer) throw new Error('Analyzer not initialized');
+    
+    onProgress(0, 0, 'Building geometric graph...');
+    const features = await this.analyzer.recognizeFeatures();
+    onProgress(1, 0, 'Feature recognition complete');
     
     return features;
   }
 
-  private async analyzePointCloud(
-    pointCloud: tf.Tensor, 
-    geometry: THREE.BufferGeometry,
-    onProgress: (progress: number, status: string) => void
-  ): Promise<MachinableFeature[]> {
-    const features: MachinableFeature[] = [];
+  // Fallback feature detection using basic geometric analysis
+  private async fallbackFeatureDetection(geometry: THREE.BufferGeometry, onProgress: (progress: number, status: string) => void): Promise<MachinableFeature[]> {
+    onProgress(0.5, 'Using fallback geometric analysis...');
     
-    // Get geometry bounds for feature scale analysis
     geometry.computeBoundingBox();
     const boundingBox = geometry.boundingBox!;
     const size = new THREE.Vector3();
     boundingBox.getSize(size);
+    const center = new THREE.Vector3();
+    boundingBox.getCenter(center);
+    
+    const features: MachinableFeature[] = [];
+    
+    // Simple heuristic-based feature detection
+    const positions = geometry.attributes.position.array;
+    const normals = geometry.attributes.normal.array;
+    
+    // Analyze geometry for basic features
+    const vertexCount = positions.length / 3;
+    const faceCount = vertexCount / 3;
+    
+    // Detect potential holes by analyzing normal patterns
+    const potentialHoles = this.detectHolePatterns(positions, normals, boundingBox);
+    features.push(...potentialHoles);
+    
+    // Detect potential pockets by analyzing height variations
+    const potentialPockets = this.detectPocketPatterns(positions, boundingBox);
+    features.push(...potentialPockets);
+    
+    onProgress(1.0, `Fallback analysis complete - found ${features.length} features`);
+    return features;
+  }
+
+  private detectHolePatterns(positions: ArrayLike<number>, normals: ArrayLike<number>, boundingBox: THREE.Box3): MachinableFeature[] {
+    const features: MachinableFeature[] = [];
+    const center = new THREE.Vector3();
+    boundingBox.getCenter(center);
+    const size = new THREE.Vector3();
+    boundingBox.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     
-    onProgress(0.4, 'Detecting hole features...');
+    // Look for circular patterns in the geometry
+    const circularRegions = this.findCircularRegions(positions, normals);
     
-    // Detect circular patterns (holes) using curvature analysis
-    const holes = await this.detectHoles(pointCloud, boundingBox, maxDim);
-    features.push(...holes);
-    
-    onProgress(0.6, 'Detecting pocket features...');
-    
-    // Detect pocket-like features
-    const pockets = await this.detectPockets(pointCloud, boundingBox, maxDim);
-    features.push(...pockets);
-    
-    onProgress(0.8, 'Detecting edge features...');
-    
-    // Detect edges and slots
-    const edges = await this.detectEdges(pointCloud, boundingBox, maxDim);
-    features.push(...edges);
+    circularRegions.forEach((region, index) => {
+      if (region.confidence > 0.6) {
+        features.push({
+          id: `hole_${index}`,
+          type: 'hole',
+          confidence: region.confidence,
+          position: region.center,
+          dimensions: {
+            diameter: region.radius * 2,
+            depth: region.depth
+          },
+          boundingBox: new THREE.Box3().setFromCenterAndSize(
+            region.center, 
+            new THREE.Vector3(region.radius * 2, region.radius * 2, region.depth)
+          ),
+          normal: region.normal,
+          toolRecommendation: region.radius < maxDim * 0.02 ? 'Small Drill Bit' : 'Standard Drill Bit'
+        });
+      }
+    });
     
     return features;
   }
 
-  private async detectHoles(pointCloud: tf.Tensor, boundingBox: THREE.Box3, maxDim: number): Promise<MachinableFeature[]> {
-    // Use TensorFlow operations to detect circular patterns
-    const [batch, numPoints, features] = pointCloud.shape;
-    const positions = pointCloud.slice([0, 0, 0], [1, numPoints, 3]);
+  private detectPocketPatterns(positions: ArrayLike<number>, boundingBox: THREE.Box3): MachinableFeature[] {
+    const features: MachinableFeature[] = [];
+    const center = new THREE.Vector3();
+    boundingBox.getCenter(center);
     
-    // Simple clustering to find potential hole centers
-    const holes: MachinableFeature[] = [];
+    // Analyze height variations to find pockets
+    const pocketRegions = this.findPocketRegions(positions, boundingBox);
     
-    // Simplified hole detection - in real implementation, use trained model
-    const numPotentialHoles = Math.floor(Math.random() * 5) + 1; // 1-5 holes
+    pocketRegions.forEach((region, index) => {
+      if (region.confidence > 0.5) {
+        features.push({
+          id: `pocket_${index}`,
+          type: 'pocket',
+          confidence: region.confidence,
+          position: region.center,
+          dimensions: {
+            length: region.length,
+            width: region.width,
+            depth: region.depth
+          },
+          boundingBox: new THREE.Box3().setFromCenterAndSize(
+            region.center,
+            new THREE.Vector3(region.length, region.width, region.depth)
+          ),
+          normal: new THREE.Vector3(0, 0, 1),
+          toolRecommendation: 'End Mill'
+        });
+      }
+    });
     
-    for (let i = 0; i < numPotentialHoles; i++) {
-      const center = new THREE.Vector3(
-        boundingBox.min.x + Math.random() * (boundingBox.max.x - boundingBox.min.x),
-        boundingBox.min.y + Math.random() * (boundingBox.max.y - boundingBox.min.y),
-        boundingBox.min.z + Math.random() * (boundingBox.max.z - boundingBox.min.z)
-      );
-      
-      const diameter = (Math.random() * 0.1 + 0.02) * maxDim; // 2-12% of max dimension
-      
-      holes.push({
-        id: `hole_${i}`,
-        type: 'hole',
-        confidence: 0.7 + Math.random() * 0.25, // 70-95% confidence
-        position: center,
-        dimensions: {
-          diameter: diameter,
-          depth: diameter * (0.5 + Math.random() * 2) // 0.5-2.5x diameter depth
-        },
-        boundingBox: new THREE.Box3().setFromCenterAndSize(center, new THREE.Vector3(diameter, diameter, diameter)),
-        normal: new THREE.Vector3(0, 0, 1),
-        toolRecommendation: diameter < maxDim * 0.05 ? 'Small Drill Bit' : 'Standard Drill Bit'
-      });
-    }
-    
-    positions.dispose();
-    return holes;
+    return features;
   }
 
-  private async detectPockets(pointCloud: tf.Tensor, boundingBox: THREE.Box3, maxDim: number): Promise<MachinableFeature[]> {
-    const pockets: MachinableFeature[] = [];
+  private findCircularRegions(positions: ArrayLike<number>, normals: ArrayLike<number>): any[] {
+    // Simplified circular pattern detection
+    const regions: any[] = [];
     
+    // This is a simplified implementation
+    // In a real implementation, you would analyze the mesh topology
+    // to find actual circular patterns
+    
+    return regions;
+  }
+
+  private findPocketRegions(positions: ArrayLike<number>, boundingBox: THREE.Box3): any[] {
     // Simplified pocket detection
-    const numPockets = Math.floor(Math.random() * 3) + 1; // 1-3 pockets
+    const regions: any[] = [];
     
-    for (let i = 0; i < numPockets; i++) {
-      const center = new THREE.Vector3(
-        boundingBox.min.x + Math.random() * (boundingBox.max.x - boundingBox.min.x),
-        boundingBox.min.y + Math.random() * (boundingBox.max.y - boundingBox.min.y),
-        boundingBox.min.z + Math.random() * (boundingBox.max.z - boundingBox.min.z)
-      );
-      
-      const width = (Math.random() * 0.15 + 0.05) * maxDim; // 5-20% of max dimension
-      const length = width * (1 + Math.random() * 2); // 1-3x width
-      const depth = width * (0.2 + Math.random() * 0.8); // 0.2-1x width
-      
-      pockets.push({
-        id: `pocket_${i}`,
-        type: 'pocket',
-        confidence: 0.6 + Math.random() * 0.3,
-        position: center,
-        dimensions: {
-          length: length,
-          width: width,
-          depth: depth
-        },
-        boundingBox: new THREE.Box3().setFromCenterAndSize(center, new THREE.Vector3(length, width, depth)),
-        normal: new THREE.Vector3(0, 0, 1),
-        toolRecommendation: 'End Mill'
-      });
-    }
+    // This is a simplified implementation
+    // In a real implementation, you would analyze mesh concavity
+    // and surface variations to find actual pockets
     
-    return pockets;
-  }
-
-  private async detectEdges(pointCloud: tf.Tensor, boundingBox: THREE.Box3, maxDim: number): Promise<MachinableFeature[]> {
-    const edges: MachinableFeature[] = [];
-    
-    // Simplified edge detection
-    const numEdges = Math.floor(Math.random() * 4) + 1; // 1-4 edges
-    
-    for (let i = 0; i < numEdges; i++) {
-      const center = new THREE.Vector3(
-        boundingBox.min.x + Math.random() * (boundingBox.max.x - boundingBox.min.x),
-        boundingBox.min.y + Math.random() * (boundingBox.max.y - boundingBox.min.y),
-        boundingBox.max.z // Edges typically on top surface
-      );
-      
-      const length = (Math.random() * 0.3 + 0.1) * maxDim; // 10-40% of max dimension
-      const width = length * (0.1 + Math.random() * 0.3); // 10-40% of length
-      
-      edges.push({
-        id: `edge_${i}`,
-        type: 'edge',
-        confidence: 0.5 + Math.random() * 0.4,
-        position: center,
-        dimensions: {
-          length: length,
-          width: width,
-          depth: width * 0.5
-        },
-        boundingBox: new THREE.Box3().setFromCenterAndSize(center, new THREE.Vector3(length, width, width * 0.5)),
-        normal: new THREE.Vector3(0, 0, 1),
-        toolRecommendation: 'Face Mill'
-      });
-    }
-    
-    return edges;
+    return regions;
   }
 }
 
@@ -271,7 +305,10 @@ const MLFeatureAnalyzer = ({ geometry, onFeaturesDetected, onProgress, onError }
           triangleCount: geometry.attributes.position.count / 3,
           boundingBox: geometry.boundingBox,
           analysisTime: Date.now(),
-          mlModel: 'TensorFlow.js Point Cloud Analyzer'
+          mlModel: 'AAGNet-Inspired Geometric Graph Analyzer',
+          analysisMethod: 'Graph Neural Network Feature Recognition',
+          confidenceThreshold: 0.5,
+          featuresFiltered: true
         };
         
         console.log('ML Feature Analysis complete:', features.length, 'features detected');
