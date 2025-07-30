@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from "react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-  import { Eye, EyeOff, Settings, Target } from "lucide-react";
-  import { Checkbox } from "@/components/ui/checkbox";
-import Model3DViewer from "./Model3DViewer";
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import { EnhancedFeatureDetection } from './EnhancedFeatureDetection';
+import Model3DViewer from './Model3DViewer';
+import { Eye, EyeOff, Settings, ChevronRight } from 'lucide-react';
 
 interface Feature {
   id: string;
