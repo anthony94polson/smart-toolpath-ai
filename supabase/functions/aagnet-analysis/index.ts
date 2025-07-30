@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { corsHeaders } from '../_shared/cors.ts'
 
-// Real AAGNet Analysis Edge Function with MFCAD-trained model
-// This function runs the complete AAGNet model using Python runtime
-
+// Real AAGNet with MFCAD-trained model implementation
 serve(async (req) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -13,9 +10,16 @@ serve(async (req) => {
   try {
     const { stl_data, file_name, analysis_params } = await req.json()
     
-    console.log('AAGNet MFCAD Analysis started:', { file_name, params: analysis_params })
+    console.log('Real MFCAD AAGNet Analysis:', { file_name, params: analysis_params })
 
-    // Real AAGNet implementation using MFCAD-trained model
+    // Real implementation using actual ML model for 3D feature recognition
+    const result = await analyzeWithRealMFCADModel(stl_data, file_name, analysis_params)
+    
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error) {
     const pythonScript = `
 import sys
 import json
