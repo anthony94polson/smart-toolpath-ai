@@ -343,12 +343,15 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
       confidence: feature.confidence,
       position: new THREE.Vector3(...feature.position),
       dimensions: feature.dimensions,
-      boundingBox: new THREE.Box3(
+      boundingBox: feature.boundingBox ? new THREE.Box3(
         new THREE.Vector3(...feature.boundingBox.min),
         new THREE.Vector3(...feature.boundingBox.max)
+      ) : new THREE.Box3(
+        new THREE.Vector3(feature.position[0] - 1, feature.position[1] - 1, feature.position[2] - 1),
+        new THREE.Vector3(feature.position[0] + 1, feature.position[1] + 1, feature.position[2] + 1)
       ),
       normal: feature.normal ? new THREE.Vector3(...feature.normal) : undefined,
-      toolRecommendation: feature.machiningParameters.toolRecommendation
+      toolRecommendation: (feature as any).machining_params?.tool_type || feature.machiningParameters?.toolRecommendation || 'Unknown tool'
     }));
 
     const analysisResults = {
