@@ -5,8 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Brain, Zap, Clock, Target } from 'lucide-react';
-import MLFeatureAnalyzer from './MLFeatureAnalyzer';
+import { Code, Zap, Clock, Target, CheckCircle } from 'lucide-react';
+import PythonAAGNetAnalyzer from './PythonAAGNetAnalyzer';
 import Model3DViewer from './Model3DViewer';
 import * as THREE from 'three';
 
@@ -126,17 +126,17 @@ const EnhancedMLFeatureDetection = ({ geometry, onFeaturesSelected }: EnhancedML
 
   return (
     <div className="space-y-6">
-      {/* ML Analysis Header */}
+      {/* Python AAGNet Analysis Header */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Brain className="h-6 w-6 text-primary" />
-              <CardTitle>ML-Powered Feature Detection</CardTitle>
+              <Code className="h-6 w-6 text-primary" />
+              <CardTitle>Python AAGNet Feature Detection</CardTitle>
             </div>
             <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-yellow-500" />
-              <span className="text-sm text-muted-foreground">TensorFlow.js</span>
+              <CheckCircle className="h-4 w-4 text-green-500" />
+              <span className="text-sm text-muted-foreground">Full Implementation</span>
             </div>
           </div>
         </CardHeader>
@@ -144,49 +144,31 @@ const EnhancedMLFeatureDetection = ({ geometry, onFeaturesSelected }: EnhancedML
           {!geometry ? (
             <Alert>
               <AlertDescription>
-                Please upload an STL file to begin ML feature detection.
+                Please upload an STL file to begin Python AAGNet feature detection.
               </AlertDescription>
             </Alert>
-          ) : (
+          ) : !isAnalyzing && features.length === 0 ? (
             <div className="space-y-4">
-              {/* Analysis Controls */}
-              <div className="flex items-center gap-4">
-                <Button 
-                  onClick={startAnalysis}
-                  disabled={isAnalyzing}
-                  className="flex items-center gap-2"
-                >
-                  <Brain className="h-4 w-4" />
-                  {isAnalyzing ? 'Analyzing...' : 'Start ML Analysis'}
-                </Button>
-                
-                {analysisResults && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>~5-10 seconds</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Progress Bar */}
-              {isAnalyzing && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>{status}</span>
-                    <span>{progress}%</span>
-                  </div>
-                  <Progress value={progress} className="h-2" />
-                </div>
-              )}
-
-              {/* Error Display */}
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+              <Alert>
+                <Code className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Python AAGNet Analysis</strong><br />
+                  Complete implementation using geometric attributed adjacency graphs, 
+                  topological analysis, and graph neural networks for maximum accuracy.
+                </AlertDescription>
+              </Alert>
+              
+              <Button 
+                onClick={startAnalysis}
+                disabled={isAnalyzing}
+                className="flex items-center gap-2"
+                size="lg"
+              >
+                <Code className="h-4 w-4" />
+                Start Python AAGNet Analysis
+              </Button>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
@@ -213,7 +195,7 @@ const EnhancedMLFeatureDetection = ({ geometry, onFeaturesSelected }: EnhancedML
               </div>
               
               <div className="mt-4 text-sm text-muted-foreground">
-                Detected {features.length} features with ML confidence scores
+                Detected {features.length} features using Python AAGNet with high-confidence geometric analysis
               </div>
             </CardContent>
           </Card>
@@ -316,10 +298,11 @@ const EnhancedMLFeatureDetection = ({ geometry, onFeaturesSelected }: EnhancedML
         </>
       )}
 
-      {/* ML Analyzer Component */}
-      {geometry && isAnalyzing && (
-        <MLFeatureAnalyzer
+      {/* Python AAGNet Analyzer Component */}
+      {geometry && (
+        <PythonAAGNetAnalyzer
           geometry={geometry}
+          fileName="uploaded-model.stl"
           onFeaturesDetected={handleFeaturesDetected}
           onProgress={handleProgress}
           onError={handleError}
