@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { STLLoader } from 'three-stdlib';
 import * as THREE from 'three';
-import { AdvancedSTLAnalyzer } from './AdvancedSTLAnalyzer';
+import { FastSTLAnalyzer } from './FastSTLAnalyzer';
 
 interface STLLoaderProps {
   file: File;
@@ -44,12 +44,12 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
             
             // Analyze features using the loaded geometry
             if (onFeaturesAnalyzed) {
-              console.log('STLLoader: Starting advanced feature analysis...');
+              console.log('STLLoader: Starting fast feature analysis...');
               try {
-                const analyzer = new AdvancedSTLAnalyzer(geometry);
+                const analyzer = new FastSTLAnalyzer(geometry);
                 const machinableFeatures = analyzer.analyzeMachinableFeatures();
                 
-                console.log('STLLoader: Advanced feature analysis complete:', machinableFeatures.length, 'machinable features found');
+                console.log('STLLoader: Fast feature analysis complete:', machinableFeatures.length, 'machinable features found');
                 console.log('STLLoader: Sample feature:', machinableFeatures[0]);
                 
                 // Create analysis results object for compatibility
@@ -65,7 +65,7 @@ const STLLoaderComponent = ({ file, onGeometryLoaded, onError, onFeaturesAnalyze
                 
                 onFeaturesAnalyzed(machinableFeatures, analysisResults);
               } catch (error) {
-                console.error('STLLoader: Advanced feature analysis failed:', error);
+                console.error('STLLoader: Fast feature analysis failed:', error);
                 // Continue with geometry loading even if analysis fails
               }
             }
