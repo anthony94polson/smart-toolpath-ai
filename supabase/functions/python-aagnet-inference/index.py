@@ -319,7 +319,9 @@ def handler(request):
         file_name = request_data.get('file_name', 'unknown.stl')
         analysis_params = request_data.get('analysis_params', {})
         
-        print(f"Processing STL analysis for: {file_name}")
+        print(f"🔥 PYTHON EDGE FUNCTION CALLED! Processing: {file_name}")
+        print(f"🔥 Analysis params: {analysis_params}")
+        print(f"🔥 About to load YOUR TRAINED MODEL from storage...")
         
         # Load model files from storage
         print("Loading trained model from storage...")

@@ -232,7 +232,9 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
       onProgress(0.3, 'Starting Python AAGNet analysis...');
 
       // Submit analysis
+      console.log('🔥🔥🔥 CALLING YOUR TRAINED MODEL SERVICE NOW!');
       const result = await pythonAAGNetService.analyzeSTL(request);
+      console.log('🔥🔥🔥 YOUR TRAINED MODEL RETURNED:', result);
 
       if (result.analysisId && result.features.length === 0) {
         // If we got an analysis ID but no features yet, poll for status

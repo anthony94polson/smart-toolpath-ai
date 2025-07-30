@@ -94,25 +94,31 @@ export class PythonAAGNetService {
    */
   private async analyzeWithSupabase(request: AAGNetAnalysisRequest): Promise<AAGNetAnalysisResult> {
     console.log('Using Supabase Edge Function for AAGNet analysis...');
+    console.log('🔥 CALLING PYTHON-AAGNET-INFERENCE FUNCTION - Your trained model should be used!');
     
     // Convert ArrayBuffer to base64 for JSON transport
     const base64Data = this.arrayBufferToBase64(request.stlData);
     
+    console.log('🔥 Invoking python-aagnet-inference with your .pth model...');
     const { data, error } = await supabase.functions.invoke('python-aagnet-inference', {
       body: {
         stl_data: base64Data,
         file_name: request.fileName,
         analysis_params: {
           confidence_threshold: 0.7,
+          use_trained_model: true,
+          model_file: 'weight_88-epoch.pth',
           ...request.analysisParams
         }
       }
     });
 
     if (error) {
+      console.error('🚨 Python Edge Function failed:', error);
       throw new Error(`Supabase function error: ${error.message}`);
     }
 
+    console.log('🎉 Python AAGNet function returned data:', data);
     return this.processAAGNetResponse(data);
   }
 
