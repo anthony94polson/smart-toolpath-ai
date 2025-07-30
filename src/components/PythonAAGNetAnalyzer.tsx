@@ -535,7 +535,10 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
                   </div>
                   <div className="text-center p-3 bg-muted rounded-lg">
                     <div className="text-2xl font-bold text-blue-600">
-                      {(analysisResult.metadata.processingTime || 0).toFixed(1)}s
+                      {typeof analysisResult.metadata.processingTime === 'number' 
+                        ? `${analysisResult.metadata.processingTime.toFixed(1)}s`
+                        : analysisResult.metadata.processingTime || 'N/A'
+                      }
                     </div>
                     <div className="text-sm text-muted-foreground">Processing Time</div>
                   </div>
@@ -581,7 +584,7 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
                       <div>
                         <strong>Position:</strong> 
                         <div className="text-muted-foreground">
-                          ({feature.position.map(p => p.toFixed(2)).join(', ')})
+                          ({feature.position.map(p => typeof p === 'number' ? p.toFixed(2) : p).join(', ')})
                         </div>
                       </div>
                       <div>
@@ -594,14 +597,17 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
                         <strong>Dimensions:</strong>
                         <div className="text-muted-foreground">
                           {Object.entries(feature.dimensions).map(([key, value]) => 
-                            `${key}: ${value.toFixed(2)}mm`
+                            `${key}: ${typeof value === 'number' ? value.toFixed(2) : value}mm`
                           ).join(', ')}
                         </div>
                       </div>
                       <div>
                         <strong>Curvature:</strong>
                         <div className="text-muted-foreground">
-                          {feature.geometricAttributes.curvature.toFixed(3)}
+                          {typeof feature.geometricAttributes?.curvature === 'number' 
+                            ? feature.geometricAttributes.curvature.toFixed(3)
+                            : feature.geometricAttributes?.curvature || 'N/A'
+                          }
                         </div>
                       </div>
                     </div>
@@ -632,7 +638,11 @@ const PythonAAGNetAnalyzer: React.FC<PythonAAGNetAnalyzerProps> = ({
                 <div className="grid gap-4">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4" />
-                    <span>Processing Time: {(analysisResult.metadata.processingTime || 0).toFixed(2)}s</span>
+                    <span>Processing Time: {
+                      typeof analysisResult.metadata.processingTime === 'number' 
+                        ? `${analysisResult.metadata.processingTime.toFixed(2)}s`
+                        : analysisResult.metadata.processingTime || 'N/A'
+                    }</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Target className="w-4 h-4" />
