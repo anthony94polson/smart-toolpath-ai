@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface AAGNetAnalysisRequest {
   stlData: ArrayBuffer;
@@ -62,10 +62,9 @@ export class PythonAAGNetService {
   private apiKey?: string;
 
   private constructor() {
-    // Try Supabase Edge Function first, fallback to direct API
-    // Since Supabase is enabled, we'll use the supabase client directly instead of env vars
-    this.baseUrl = 'https://placeholder.supabase.co/functions/v1/aagnet-analysis'; // Will be overridden by supabase client
-    this.apiKey = undefined; // Will use supabase client instead
+    // Use Supabase Edge Functions - they're now properly set up
+    this.baseUrl = 'https://hxdtchuvjzafnajbhkok.supabase.co/functions/v1';
+    this.apiKey = undefined;
   }
 
   static getInstance(): PythonAAGNetService {
@@ -81,16 +80,7 @@ export class PythonAAGNetService {
   async analyzeSTL(request: AAGNetAnalysisRequest): Promise<AAGNetAnalysisResult> {
     console.log('PythonAAGNetService: Starting AAGNet analysis...');
     
-    // Check if we have real Supabase credentials
-    const hasRealSupabase = !this.baseUrl.includes('placeholder');
-    
-    if (!hasRealSupabase) {
-      console.warn('PythonAAGNetService: No real Supabase connection available, analysis will be handled by browser fallback');
-      throw new Error('Supabase connection not configured - please connect your project to Supabase for Python AAGNet analysis');
-    }
-    
     try {
-      // Try Supabase Edge Function first
       const result = await this.analyzeWithSupabase(request);
       return result;
     } catch (supabaseError) {
