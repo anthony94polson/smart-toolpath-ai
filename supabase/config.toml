@@ -1,1 +1,10 @@
 project_id = "hxdtchuvjzafnajbhkok"
+
+[functions.aagnet-analysis]
+verify_jwt = false
+
+[functions.aagnet-models] 
+verify_jwt = false
+
+[functions.aagnet-status]
+verify_jwt = false
