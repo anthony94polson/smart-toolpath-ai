@@ -54,6 +54,7 @@
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "onnxjs": "^0.1.8",
+    "onnxruntime-web": "^1.22.0",
     "opencascade.js": "^1.1.1",
     "pyodide": "^0.28.0",
     "react": "^18.3.1",
