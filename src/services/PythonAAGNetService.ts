@@ -63,11 +63,9 @@ export class PythonAAGNetService {
 
   private constructor() {
     // Try Supabase Edge Function first, fallback to direct API
-    this.baseUrl = process.env.SUPABASE_URL 
-      ? `${process.env.SUPABASE_URL}/functions/v1/aagnet-analysis`
-      : 'http://localhost:8000/api/aagnet'; // Local Python API fallback
-    
-    this.apiKey = process.env.SUPABASE_ANON_KEY;
+    // Since Supabase is enabled, we'll use the supabase client directly instead of env vars
+    this.baseUrl = 'https://placeholder.supabase.co/functions/v1/aagnet-analysis'; // Will be overridden by supabase client
+    this.apiKey = undefined; // Will use supabase client instead
   }
 
   static getInstance(): PythonAAGNetService {
