@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.aagnet-status]
 verify_jwt = false
+
+[functions.python-aagnet-inference]
+verify_jwt = false

@@ -98,11 +98,14 @@ export class PythonAAGNetService {
     // Convert ArrayBuffer to base64 for JSON transport
     const base64Data = this.arrayBufferToBase64(request.stlData);
     
-    const { data, error } = await supabase.functions.invoke('aagnet-analysis', {
+    const { data, error } = await supabase.functions.invoke('python-aagnet-inference', {
       body: {
         stl_data: base64Data,
         file_name: request.fileName,
-        analysis_params: request.analysisParams || {}
+        analysis_params: {
+          confidence_threshold: 0.7,
+          ...request.analysisParams
+        }
       }
     });
 
