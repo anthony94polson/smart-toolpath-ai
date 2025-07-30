@@ -96,6 +96,13 @@ class MLFeatureDetector {
   async detectFeatures(geometry: THREE.BufferGeometry, onProgress: (progress: number, status: string) => void): Promise<MachinableFeature[]> {
     await this.initialize();
     
+    console.log('MLFeatureAnalyzer: Starting feature detection with geometry:', {
+      hasPosition: !!geometry.attributes.position,
+      vertexCount: geometry.attributes.position?.count || 0,
+      hasNormal: !!geometry.attributes.normal,
+      boundingBox: geometry.boundingBox
+    });
+    
     onProgress(0.05, 'Initializing AAGNet-inspired analyzer...');
     
     // Ensure geometry has proper normals
@@ -107,7 +114,9 @@ class MLFeatureDetector {
     onProgress(0.15, 'Creating geometric graph analyzer...');
     
     // Create AAGNet analyzer instance
+    console.log('MLFeatureAnalyzer: Creating AAGNetInspiredAnalyzer...');
     this.analyzer = new AAGNetInspiredAnalyzer(geometry);
+    console.log('MLFeatureAnalyzer: AAGNetInspiredAnalyzer created successfully');
     
     onProgress(0.25, 'Constructing geometric attributed adjacency graph...');
     
@@ -121,7 +130,9 @@ class MLFeatureDetector {
       onProgress(0.3, 'Analyzing geometric topology...');
       
       // Use AAGNet-inspired feature recognition with progress tracking
+      console.log('MLFeatureAnalyzer: Starting AAGNet analysis...');
       const geometricFeatures = await this.runAAGNetAnalysisWithProgress(progressWrapper);
+      console.log('MLFeatureAnalyzer: AAGNet analysis returned:', geometricFeatures.length, 'features');
       
       onProgress(0.9, 'Converting features to machining format...');
       
@@ -130,8 +141,11 @@ class MLFeatureDetector {
         this.convertToMachinableFeature(geoFeature, index)
       );
       
+      console.log('MLFeatureAnalyzer: Converted to', machinableFeatures.length, 'machining features');
+      
       // Filter out low-confidence features
       const filteredFeatures = machinableFeatures.filter(f => f.confidence > 0.5);
+      console.log('MLFeatureAnalyzer: After confidence filtering:', filteredFeatures.length, 'features');
       
       onProgress(1.0, `Analysis complete - found ${filteredFeatures.length} high-confidence features`);
       
@@ -156,6 +170,7 @@ class MLFeatureDetector {
   private async runAAGNetAnalysisWithProgress(onProgress: (step: number, substep: number, status: string) => void): Promise<any[]> {
     if (!this.analyzer) throw new Error('Analyzer not initialized');
     
+    console.log('MLFeatureAnalyzer: Running AAGNet analysis with progress tracking...');
     onProgress(0, 0, 'Building geometric graph...');
     const features = await this.analyzer.recognizeFeatures();
     onProgress(1, 0, 'Feature recognition complete');

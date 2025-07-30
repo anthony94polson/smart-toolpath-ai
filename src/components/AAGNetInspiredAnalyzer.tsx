@@ -62,10 +62,10 @@ export class AAGNetInspiredAnalyzer {
   private faces: number[][];
   private geometricGraph: GeometricGraph | null = null;
   
-  // AAGNet-inspired parameters
-  private readonly FEATURE_RECOGNITION_THRESHOLD = 0.75;
+  // AAGNet-inspired parameters (relaxed for initial testing)
+  private readonly FEATURE_RECOGNITION_THRESHOLD = 0.3; // Lowered from 0.75 to 0.3
   private readonly GEOMETRIC_TOLERANCE = 1e-6;
-  private readonly MIN_FEATURE_SIZE = 0.5; // mm
+  private readonly MIN_FEATURE_SIZE = 0.1; // Lowered from 0.5 to 0.1 mm
   
   constructor(geometry: THREE.BufferGeometry) {
     this.geometry = geometry;
@@ -98,23 +98,36 @@ export class AAGNetInspiredAnalyzer {
    */
   async recognizeFeatures(): Promise<GeometricFeature[]> {
     console.log('AAGNet-Inspired: Starting feature recognition pipeline...');
+    console.log('AAGNet-Inspired: Geometry info:', {
+      vertices: this.vertices.length / 3,
+      faces: this.faces.length,
+      hasNormals: this.normals.length > 0
+    });
     
     // Step 1: Construct Geometric Attributed Adjacency Graph (gAAG)
+    console.log('AAGNet-Inspired: Step 1 - Constructing geometric graph...');
     this.geometricGraph = await this.constructGeometricGraph();
+    console.log('AAGNet-Inspired: Graph constructed with', this.geometricGraph.nodes.length, 'nodes and', this.geometricGraph.edges.length, 'edges');
     
     // Step 2: Multi-scale topological analysis
+    console.log('AAGNet-Inspired: Step 2 - Analyzing topology...');
     const topologicalFeatures = await this.analyzeTopology();
+    console.log('AAGNet-Inspired: Found', topologicalFeatures.length, 'topological features');
     
     // Step 3: Geometric attribute analysis
+    console.log('AAGNet-Inspired: Step 3 - Analyzing geometric attributes...');
     const geometricAttributes = await this.analyzeGeometricAttributes();
     
     // Step 4: Feature classification using graph neural network principles
+    console.log('AAGNet-Inspired: Step 4 - Classifying features...');
     const classifiedFeatures = await this.classifyFeatures(topologicalFeatures, geometricAttributes);
+    console.log('AAGNet-Inspired: Classified', classifiedFeatures.length, 'features');
     
     // Step 5: Post-processing and validation
+    console.log('AAGNet-Inspired: Step 5 - Validating features...');
     const validatedFeatures = this.validateAndRefineFeatures(classifiedFeatures);
     
-    console.log(`AAGNet-Inspired: Recognized ${validatedFeatures.length} validated features`);
+    console.log(`AAGNet-Inspired: Recognition complete - ${validatedFeatures.length} validated features out of ${classifiedFeatures.length} classified`);
     return validatedFeatures;
   }
 
@@ -306,23 +319,32 @@ export class AAGNetInspiredAnalyzer {
     const topologicalFeatures = [];
     
     // Detect connected components
+    console.log('AAGNet-Inspired: Finding connected components...');
     const components = this.findConnectedComponents();
+    console.log('AAGNet-Inspired: Found', components.length, 'connected components');
     
     // Analyze each component for potential features
-    for (const component of components) {
+    for (let i = 0; i < components.length; i++) {
+      const component = components[i];
+      console.log(`AAGNet-Inspired: Analyzing component ${i + 1} with ${component.length} faces`);
+      
       // Detect holes (circular patterns)
       const holes = this.detectCircularPatterns(component);
+      console.log(`AAGNet-Inspired: Found ${holes.length} hole patterns in component ${i + 1}`);
       topologicalFeatures.push(...holes);
       
       // Detect pockets (concave regions)
       const pockets = this.detectConcaveRegions(component);
+      console.log(`AAGNet-Inspired: Found ${pockets.length} pocket regions in component ${i + 1}`);
       topologicalFeatures.push(...pockets);
       
       // Detect slots (elongated concave features)
       const slots = this.detectElongatedFeatures(component);
+      console.log(`AAGNet-Inspired: Found ${slots.length} slot features in component ${i + 1}`);
       topologicalFeatures.push(...slots);
     }
     
+    console.log('AAGNet-Inspired: Total topological features found:', topologicalFeatures.length);
     return topologicalFeatures;
   }
 
@@ -638,15 +660,23 @@ export class AAGNetInspiredAnalyzer {
    * Post-processing and validation
    */
   private validateAndRefineFeatures(features: GeometricFeature[]): GeometricFeature[] {
-    return features.filter(feature => {
+    console.log('AAGNet-Inspired: Validating', features.length, 'features...');
+    console.log('AAGNet-Inspired: Validation thresholds - Size:', this.MIN_FEATURE_SIZE, 'Confidence:', this.FEATURE_RECOGNITION_THRESHOLD);
+    
+    const validated = features.filter((feature, index) => {
       // Size validation
       const maxDim = Math.max(...Object.values(feature.dimensions));
-      if (maxDim < this.MIN_FEATURE_SIZE) return false;
+      const sizeValid = maxDim >= this.MIN_FEATURE_SIZE;
       
       // Confidence validation
-      if (feature.confidence < this.FEATURE_RECOGNITION_THRESHOLD) return false;
+      const confidenceValid = feature.confidence >= this.FEATURE_RECOGNITION_THRESHOLD;
       
-      return true;
+      console.log(`AAGNet-Inspired: Feature ${index + 1} (${feature.type}): size=${maxDim.toFixed(2)}, confidence=${feature.confidence.toFixed(2)}, sizeValid=${sizeValid}, confidenceValid=${confidenceValid}`);
+      
+      return sizeValid && confidenceValid;
     });
+    
+    console.log('AAGNet-Inspired: After validation:', validated.length, 'features remain');
+    return validated;
   }
 }
