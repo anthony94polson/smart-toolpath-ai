@@ -94,7 +94,7 @@ const FileUpload = ({ onFileUploaded }: FileUploadProps) => {
     // Call the parent callback with the real analysis results
     onFileUploaded(uploadedFile!, results, features);
     
-    const totalFeatures = Object.values(results.features).reduce((a: any, b: any) => Number(a) + Number(b), 0);
+    const totalFeatures = features?.length || 0;
     toast({
       title: "Analysis Complete",
       description: `Successfully processed ${uploadedFile?.name} with ${totalFeatures} features detected.`,
