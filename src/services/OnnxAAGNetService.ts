@@ -231,10 +231,12 @@ class OnnxAAGNetService {
       uvData[baseIdx + 6] = vertex.boundary || 0;
     }
     
-    // Create face attributes (shape: [N, 1])
-    const faceAttr = new Float32Array(numNodes);
-    for (let i = 0; i < numNodes; i++) {
-      faceAttr[i] = mesh.vertices[i].faceType || 0;
+    // Create face attributes - AAGNet expects face features for each face, not node
+    // Since we have triangular mesh, we have numNodes/3 faces (approximately)
+    const numFaces = Math.floor(numNodes / 3);
+    const faceAttr = new Float32Array(numFaces);
+    for (let i = 0; i < numFaces; i++) {
+      faceAttr[i] = 0; // Simple face attribute (could be area, normal angle, etc.)
     }
     
     // Create edge features (edge_attr_dim = 12)
@@ -265,10 +267,11 @@ class OnnxAAGNetService {
     }
     
     try {
+      console.log(`📊 Creating tensors - nodes: ${numNodes}, faces: ${numFaces}, edges: ${numEdges}`);
       return {
         node_x: new ort.Tensor('float32', nodeFeatures, [numNodes, 10]),
         node_uv: new ort.Tensor('float32', uvData, [numNodes, 7, 1, 1]),
-        face_attr: new ort.Tensor('float32', faceAttr, [numNodes, 1]),
+        face_attr: new ort.Tensor('float32', faceAttr, [numFaces, 1]),
         edge_x: new ort.Tensor('float32', edgeFeatures, [numEdges, 12]),
         src: new ort.Tensor('int32', srcIndices, [numEdges]),
         dst: new ort.Tensor('int32', dstIndices, [numEdges])
