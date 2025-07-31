@@ -7,6 +7,7 @@ import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import FeatureInstance from "./FeatureInstance";
 
 interface PythonAAGNetFeature {
   type: string;
@@ -44,8 +45,9 @@ export default function PythonAAGNetAnalyzer() {
   const { toast } = useToast();
 
   const handleFileUpload = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.stl')) {
-      setError('Please upload an STL file');
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.step') && !fileName.endsWith('.stp')) {
+      setError('Please upload a STEP file (.step or .stp)');
       return;
     }
 
@@ -64,14 +66,16 @@ export default function PythonAAGNetAnalyzer() {
       console.log('🚀 Starting Python AAGNet analysis...');
       console.log('📊 File size:', file.size, 'bytes');
 
-      // Call Python AAGNet inference edge function
+      // Call Python AAGNet inference edge function with STEP data
       const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-inference', {
         body: {
-          stl_data: base64Data,
+          step_data: base64Data,
           file_name: file.name,
           analysis_params: {
-            confidence_threshold: 0.3,
-            feature_types: ['hole', 'pocket', 'slot', 'boss', 'step', 'fillet', 'chamfer']
+            inst_thres: 0.5,
+            bottom_thres: 0.5,
+            center_and_scale: false,
+            normalize: true
           }
         }
       });
@@ -109,8 +113,8 @@ export default function PythonAAGNetAnalyzer() {
       console.log('🎯 Features detected:', result.features.length);
 
       toast({
-        title: "Analysis Complete",
-        description: `Detected ${result.features.length} machining features using PyTorch AAGNet model`,
+        title: "AAGNet Analysis Complete",
+        description: `Detected ${result.features.length} machining features from STEP file using your trained model`,
       });
 
     } catch (error) {
@@ -131,7 +135,7 @@ export default function PythonAAGNetAnalyzer() {
     if (!analysisResult) return;
 
     const resultsData = {
-      fileName: uploadedFile?.name || 'unknown.stl',
+      fileName: uploadedFile?.name || 'unknown.step',
       analysisDate: new Date().toISOString(),
       results: analysisResult
     };
@@ -202,8 +206,8 @@ export default function PythonAAGNetAnalyzer() {
             <Badge variant="secondary">PyTorch</Badge>
           </CardTitle>
           <CardDescription>
-            Advanced machining feature recognition using the native PyTorch AAGNet model.
-            This analyzer uses the original .pth model file for maximum accuracy and compatibility.
+            Advanced machining feature recognition using your trained AAGNet model with STEP file support.
+            This analyzer uses your exact model architecture and weight_on_MFInstseg.pth for maximum accuracy.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -216,17 +220,17 @@ export default function PythonAAGNetAnalyzer() {
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
             <input
               type="file"
-              accept=".stl"
+              accept=".step,.stp"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) handleFileUpload(file);
               }}
               disabled={isAnalyzing}
               className="hidden"
-              id="stl-upload"
+              id="step-upload"
             />
             <label 
-              htmlFor="stl-upload" 
+              htmlFor="step-upload" 
               className={`cursor-pointer block ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <div className="text-gray-500 mb-2">
@@ -234,8 +238,8 @@ export default function PythonAAGNetAnalyzer() {
                   <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <p className="text-lg font-medium">Click to upload STL file</p>
-              <p className="text-sm text-gray-500">Maximum file size: 50MB</p>
+              <p className="text-lg font-medium">Click to upload STEP file</p>
+              <p className="text-sm text-gray-500">Supports .step and .stp files • Maximum: 50MB</p>
             </label>
           </div>
 
