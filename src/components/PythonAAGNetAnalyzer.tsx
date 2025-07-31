@@ -216,7 +216,7 @@ export default function PythonAAGNetAnalyzer() {
           )}
 
           <FileUpload 
-            onFileUploaded={async (file: File) => await handleFileUpload(file)}
+            onFileUploaded={handleFileUpload}
           />
 
           {isAnalyzing && (
