@@ -6,7 +6,7 @@ import ToolLibrary from "@/components/ToolLibrary";
 import ToolpathGeneration from "@/components/ToolpathGeneration";
 import SimulationResults from "@/components/SimulationResults";
 import { ModelConverter } from "@/components/ModelConverter";
-import { OnnxAAGNetAnalyzer } from "@/components/OnnxAAGNetAnalyzer";
+import PythonAAGNetAnalyzer from "@/components/PythonAAGNetAnalyzer";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -127,7 +127,7 @@ const Workspace = () => {
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="upload">Upload STL</TabsTrigger>
                   <TabsTrigger value="converter">Model Converter</TabsTrigger>
-                  <TabsTrigger value="onnx">ONNX Analyzer</TabsTrigger>
+                  <TabsTrigger value="onnx">PyTorch Analyzer</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="upload" className="space-y-4">
@@ -139,7 +139,7 @@ const Workspace = () => {
                 </TabsContent>
                 
                 <TabsContent value="onnx" className="space-y-4">
-                  <OnnxAAGNetAnalyzer />
+                  <PythonAAGNetAnalyzer />
                 </TabsContent>
               </Tabs>
             </div>

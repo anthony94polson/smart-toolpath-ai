@@ -1,20 +1,26 @@
-import * as tf from '@tensorflow/tfjs';
-import * as THREE from 'three';
+import React, { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Button } from "./ui/button";
+import { Progress } from "./ui/progress";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { FileUpload } from "./FileUpload";
+import { Model3DViewer } from "./Model3DViewer";
+import { useToast } from "./ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
-interface GeometricFeature {
-  id: string;
-  type: 'hole' | 'pocket' | 'slot' | 'boss' | 'step' | 'chamfer' | 'fillet' | 'groove';
+interface PythonAAGNetFeature {
+  type: string;
   confidence: number;
-  position: THREE.Vector3;
-  dimensions: Record<string, number>;
-  boundingBox: THREE.Box3;
-  normal?: THREE.Vector3;
-  adjacentFaces: number[];
-  geometricAttributes: {
-    curvature: number;
-    planarity: number;
-    cylindricity?: number;
-    concentricity?: number;
+  position: [number, number, number];
+  dimensions: number[];
+  normal?: [number, number, number];
+  machiningParameters: {
+    toolRecommendation: string;
+    feedRate: number;
+    spindleSpeed: number;
+    depthOfCut: number;
   };
 }
 
