@@ -216,14 +216,25 @@ export default function PythonAAGNetAnalyzer() {
     if (!analysisResult) return null;
 
     const features = analysisResult.features;
-    const avgConfidence = features.length > 0 
-      ? features.reduce((sum, f) => sum + f.confidence, 0) / features.length 
+    
+    // Ensure confidence values are numbers
+    const validConfidences = features
+      .map(f => typeof f.confidence === 'number' ? f.confidence : 0)
+      .filter(c => !isNaN(c));
+    
+    const avgConfidence = validConfidences.length > 0 
+      ? validConfidences.reduce((sum, c) => sum + c, 0) / validConfidences.length 
+      : 0;
+
+    // Ensure processingTime is a number
+    const processingTime = typeof analysisResult.metadata.processingTime === 'number' 
+      ? analysisResult.metadata.processingTime 
       : 0;
 
     return {
       totalFeatures: features.length,
-      averageConfidence: avgConfidence,
-      processingTime: analysisResult.metadata.processingTime,
+      averageConfidence: Number(avgConfidence) || 0,
+      processingTime: Number(processingTime) || 0,
       featureBreakdown: analysisResult.statistics.featureTypes
     };
   };
@@ -306,7 +317,7 @@ export default function PythonAAGNetAnalyzer() {
                   <Card>
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-primary">
-                        {((getSummaryStats()?.averageConfidence || 0) * 100).toFixed(1)}%
+                        {(Number(getSummaryStats()?.averageConfidence || 0) * 100).toFixed(1)}%
                       </div>
                       <div className="text-sm text-muted-foreground">Avg Confidence</div>
                     </CardContent>
@@ -315,7 +326,7 @@ export default function PythonAAGNetAnalyzer() {
                   <Card>
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-primary">
-                        {(getSummaryStats()?.processingTime || 0).toFixed(2)}s
+                        {Number(getSummaryStats()?.processingTime || 0).toFixed(2)}s
                       </div>
                       <div className="text-sm text-muted-foreground">Processing Time</div>
                     </CardContent>
@@ -352,7 +363,7 @@ export default function PythonAAGNetAnalyzer() {
                               {feature.type}
                             </Badge>
                             <span className="text-sm font-medium">
-                              Confidence: {(feature.confidence * 100).toFixed(1)}%
+                              Confidence: {(Number(feature.confidence || 0) * 100).toFixed(1)}%
                             </span>
                           </div>
                         </div>
@@ -360,20 +371,20 @@ export default function PythonAAGNetAnalyzer() {
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
                             <strong>Position:</strong> 
-                            ({feature.position[0].toFixed(2)}, {feature.position[1].toFixed(2)}, {feature.position[2].toFixed(2)})
+                            ({Number(feature.position[0] || 0).toFixed(2)}, {Number(feature.position[1] || 0).toFixed(2)}, {Number(feature.position[2] || 0).toFixed(2)})
                           </div>
                           <div>
                             <strong>Dimensions:</strong> 
                             {feature.dimensions.diameter 
-                              ? `Ø${feature.dimensions.diameter.toFixed(2)}mm`
-                              : `${feature.dimensions.width.toFixed(2)} × ${feature.dimensions.height.toFixed(2)} × ${feature.dimensions.depth.toFixed(2)}mm`
+                              ? `Ø${Number(feature.dimensions.diameter || 0).toFixed(2)}mm`
+                              : `${Number(feature.dimensions.width || 0).toFixed(2)} × ${Number(feature.dimensions.height || 0).toFixed(2)} × ${Number(feature.dimensions.depth || 0).toFixed(2)}mm`
                             }
                           </div>
                           <div>
                             <strong>Tool:</strong> {feature.machining_params?.tool_type || 'N/A'}
                           </div>
                           <div>
-                            <strong>Feed Rate:</strong> {feature.machining_params?.feed_rate || 0} mm/min
+                            <strong>Feed Rate:</strong> {Number(feature.machining_params?.feed_rate || 0).toFixed(1)} mm/min
                           </div>
                         </div>
                       </CardContent>
