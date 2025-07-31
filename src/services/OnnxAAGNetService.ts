@@ -131,7 +131,7 @@ class OnnxAAGNetService {
         features,
         metadata: {
           processingTime,
-          modelVersion: 'weight_88-epoch.onnx',
+          modelVersion: 'aagnet.onnx',
           confidence: features.length > 0 ? features.reduce((sum, f) => sum + f.confidence, 0) / features.length : 0
         },
         statistics: {

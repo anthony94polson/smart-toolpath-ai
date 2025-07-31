@@ -163,7 +163,7 @@ export const OnnxAAGNetAnalyzer: React.FC = () => {
               )}
             </div>
             <Badge variant="secondary" className="bg-purple-100 text-purple-800">
-              weight_88-epoch.onnx
+              aagnet.onnx
             </Badge>
           </div>
         </CardHeader>
