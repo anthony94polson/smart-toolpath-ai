@@ -57,11 +57,21 @@ class OnnxAAGNetService {
       
       try {
         // Try loading from Supabase storage first
-        modelResponse = await fetch('https://hxdtchuvjzafnajbhkok.supabase.co/storage/v1/object/public/models/aagnet.onnx');
+        const modelUrl = 'https://hxdtchuvjzafnajbhkok.supabase.co/storage/v1/object/public/models/aagnet.onnx';
+        console.log('🔍 Attempting to load ONNX model from:', modelUrl);
+        
+        modelResponse = await fetch(modelUrl);
+        console.log('📡 Fetch response status:', modelResponse.status, modelResponse.statusText);
+        console.log('📡 Response headers:', Object.fromEntries(modelResponse.headers.entries()));
+        
       } catch (error) {
-        console.log('📦 Model not found in storage, using fallback...');
+        console.log('📦 Model fetch failed:', error);
+        console.log('💡 This could mean:');
+        console.log('   - Storage bucket is not public');
+        console.log('   - File aagnet.onnx does not exist in storage');
+        console.log('   - Network connectivity issue');
         // Fallback to a public model or create a demo model
-        throw new Error('ONNX model not found. Please convert your PyTorch model first using the Model Converter.');
+        throw new Error('ONNX model not found. Please check: 1) File "aagnet.onnx" exists in storage, 2) Storage bucket "models" is public, 3) File permissions are correct.');
       }
       
       if (!modelResponse.ok) {
