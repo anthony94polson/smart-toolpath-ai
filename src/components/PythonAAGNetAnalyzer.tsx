@@ -57,14 +57,33 @@ export default function PythonAAGNetAnalyzer() {
       setProgress(10);
       setUploadedFile(file);
 
-      // Convert file to base64
+      console.log('🚀 Starting Python AAGNet analysis...');
+      console.log('📊 File size:', file.size, 'bytes');
+
+      // Check file size limit (50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        throw new Error('File size exceeds 50MB limit');
+      }
+
+      // Convert file to base64 safely for large files
       const arrayBuffer = await file.arrayBuffer();
-      const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Use chunks to avoid stack overflow for large files
+      let base64Data = '';
+      const chunkSize = 8192; // Process in 8KB chunks
+      
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.slice(i, i + chunkSize);
+        base64Data += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      
+      base64Data = btoa(base64Data);
       
       setProgress(30);
 
-      console.log('🚀 Starting Python AAGNet analysis...');
-      console.log('📊 File size:', file.size, 'bytes');
+      console.log('✅ File converted to base64 successfully');
+      console.log('🔄 Calling Python AAGNet inference...');
 
       // Call Python AAGNet inference edge function with STEP data
       const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-inference', {
@@ -82,14 +101,19 @@ export default function PythonAAGNetAnalyzer() {
 
       setProgress(80);
 
+      console.log('📋 Edge function response received');
+
       if (functionError) {
+        console.error('❌ Edge function error:', functionError);
         throw new Error(`Python inference failed: ${functionError.message}`);
       }
 
       if (!data) {
+        console.error('❌ No data received from edge function');
         throw new Error('No data received from Python inference');
       }
 
+      console.log('✅ Analysis data received:', data);
       setProgress(90);
 
       // Process the results
