@@ -105,19 +105,30 @@ class OnnxAAGNetService {
     const startTime = performance.now();
 
     try {
+      console.log('🔍 Starting ONNX AAGNet analysis...');
+      console.log('📊 Input STL size:', stlData.byteLength, 'bytes');
+      
       // Ensure model is loaded
+      console.log('⏳ Checking model status...');
       await this.loadModel();
 
       if (!this.session) {
         throw new Error('ONNX model not loaded');
       }
 
-      console.log('🔍 Preprocessing STL data for ONNX inference...');
+      console.log('✅ Model is ready, preprocessing STL...');
       
       // Convert STL to graph representation for AAGNet
       const graphInputs = await this.preprocessSTLForAAGNet(stlData);
       
-      console.log('🚀 Running ONNX inference...');
+      console.log('✅ Preprocessing complete, running inference...');
+      console.log('📊 Input tensor shapes:');
+      console.log('  - node_x:', graphInputs.node_x.dims);
+      console.log('  - node_uv:', graphInputs.node_uv.dims);
+      console.log('  - face_attr:', graphInputs.face_attr.dims);
+      console.log('  - edge_x:', graphInputs.edge_x.dims);
+      console.log('  - src:', graphInputs.src.dims);
+      console.log('  - dst:', graphInputs.dst.dims);
       
       // Run inference with all 6 inputs: node_x, node_uv, face_attr, edge_x, src, dst
       const feeds = {
@@ -128,6 +139,8 @@ class OnnxAAGNetService {
         'src': graphInputs.src,
         'dst': graphInputs.dst
       };
+      
+      console.log('🚀 Running ONNX inference...');
       const results = await this.session.run(feeds);
 
       console.log('📊 Raw ONNX outputs:', Object.keys(results));
@@ -158,6 +171,11 @@ class OnnxAAGNetService {
 
     } catch (error) {
       console.error('❌ ONNX inference failed:', error);
+      console.error('❌ Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       throw new Error(`ONNX AAGNet analysis failed: ${error}`);
     }
   }
@@ -221,15 +239,15 @@ class OnnxAAGNetService {
     
     // Create edge features (edge_attr_dim = 12)
     const edgeFeatures = new Float32Array(numEdges * 12);
-    const srcIndices = new BigInt64Array(numEdges);
-    const dstIndices = new BigInt64Array(numEdges);
+    const srcIndices = new Int32Array(numEdges); // Changed from BigInt64Array
+    const dstIndices = new Int32Array(numEdges); // Changed from BigInt64Array
     
     for (let i = 0; i < numEdges; i++) {
       const edge = mesh.edges[i];
       const baseIdx = i * 12;
       
-      srcIndices[i] = BigInt(edge.src);
-      dstIndices[i] = BigInt(edge.dst);
+      srcIndices[i] = edge.src; // Remove BigInt conversion
+      dstIndices[i] = edge.dst; // Remove BigInt conversion
       
       // Edge geometric features
       edgeFeatures[baseIdx] = edge.length || 0;
@@ -252,8 +270,8 @@ class OnnxAAGNetService {
         node_uv: new ort.Tensor('float32', uvData, [numNodes, 7, 1, 1]),
         face_attr: new ort.Tensor('float32', faceAttr, [numNodes, 1]),
         edge_x: new ort.Tensor('float32', edgeFeatures, [numEdges, 12]),
-        src: new ort.Tensor('int64', srcIndices, [numEdges]),
-        dst: new ort.Tensor('int64', dstIndices, [numEdges])
+        src: new ort.Tensor('int32', srcIndices, [numEdges]),
+        dst: new ort.Tensor('int32', dstIndices, [numEdges])
       };
     } catch (error) {
       console.error('❌ Failed to create input tensors:', error);
