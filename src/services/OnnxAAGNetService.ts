@@ -81,10 +81,13 @@ class OnnxAAGNetService {
       const modelArrayBuffer = await modelResponse.arrayBuffer();
       console.log(`📦 Model loaded: ${(modelArrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
 
-      // Create ONNX Runtime session
+      // Create ONNX Runtime session with more conservative settings
       this.session = await ort.InferenceSession.create(modelArrayBuffer, {
         executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
+        graphOptimizationLevel: 'basic', // Changed from 'all' to 'basic'
+        enableCpuMemArena: false, // Disable memory arena to avoid cloning issues
+        enableMemPattern: false, // Disable memory pattern optimization
+        executionMode: 'sequential', // Use sequential execution
       });
 
       this.modelLoaded = true;
@@ -243,14 +246,19 @@ class OnnxAAGNetService {
       edgeFeatures[baseIdx + 11] = edge.type || 0;
     }
     
-    return {
-      node_x: new ort.Tensor('float32', nodeFeatures, [numNodes, 10]),
-      node_uv: new ort.Tensor('float32', uvData, [numNodes, 7, 1, 1]),
-      face_attr: new ort.Tensor('float32', faceAttr, [numNodes, 1]),
-      edge_x: new ort.Tensor('float32', edgeFeatures, [numEdges, 12]),
-      src: new ort.Tensor('int64', srcIndices, [numEdges]),
-      dst: new ort.Tensor('int64', dstIndices, [numEdges])
-    };
+    try {
+      return {
+        node_x: new ort.Tensor('float32', nodeFeatures, [numNodes, 10]),
+        node_uv: new ort.Tensor('float32', uvData, [numNodes, 7, 1, 1]),
+        face_attr: new ort.Tensor('float32', faceAttr, [numNodes, 1]),
+        edge_x: new ort.Tensor('float32', edgeFeatures, [numEdges, 12]),
+        src: new ort.Tensor('int64', srcIndices, [numEdges]),
+        dst: new ort.Tensor('int64', dstIndices, [numEdges])
+      };
+    } catch (error) {
+      console.error('❌ Failed to create input tensors:', error);
+      throw new Error(`Tensor creation failed: ${error}`);
+    }
   }
   
   private parseSTL(stlData: ArrayBuffer): { vertices: any[]; edges: any[] } {
