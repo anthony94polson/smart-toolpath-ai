@@ -10,16 +10,23 @@ import { supabase } from "@/integrations/supabase/client";
 import FeatureInstance from "./FeatureInstance";
 
 interface PythonAAGNetFeature {
+  id?: string;
   type: string;
   confidence: number;
   position: [number, number, number];
-  dimensions: number[];
+  dimensions: {
+    diameter?: number;
+    width: number;
+    height: number;
+    depth: number;
+  };
   normal?: [number, number, number];
-  machiningParameters: {
-    toolRecommendation: string;
-    feedRate: number;
-    spindleSpeed: number;
-    depthOfCut: number;
+  machining_params?: {
+    tool_type: string;
+    tool_diameter: number;
+    speed: number;
+    feed_rate: number;
+    [key: string]: any;
   };
 }
 
@@ -120,13 +127,13 @@ export default function PythonAAGNetAnalyzer() {
       const result: PythonAAGNetResult = {
         features: data.features || [],
         metadata: {
-          processingTime: data.processing_time || 0,
-          modelVersion: data.model_version || 'aagnet.pth',
-          confidence: data.overall_confidence || 0
+          processingTime: data.metadata?.processing_time || 0,
+          modelVersion: data.metadata?.model_type || 'AAGNet',
+          confidence: data.statistics?.average_confidence || 0
         },
         statistics: {
           totalFeatures: data.features?.length || 0,
-          featureTypes: data.feature_types || {}
+          featureTypes: data.statistics?.feature_types || {}
         }
       };
 
@@ -356,13 +363,17 @@ export default function PythonAAGNetAnalyzer() {
                             ({feature.position[0].toFixed(2)}, {feature.position[1].toFixed(2)}, {feature.position[2].toFixed(2)})
                           </div>
                           <div>
-                            <strong>Dimensions:</strong> {feature.dimensions.map(d => d.toFixed(2)).join(' × ')}
+                            <strong>Dimensions:</strong> 
+                            {feature.dimensions.diameter 
+                              ? `Ø${feature.dimensions.diameter.toFixed(2)}mm`
+                              : `${feature.dimensions.width.toFixed(2)} × ${feature.dimensions.height.toFixed(2)} × ${feature.dimensions.depth.toFixed(2)}mm`
+                            }
                           </div>
                           <div>
-                            <strong>Tool:</strong> {feature.machiningParameters.toolRecommendation}
+                            <strong>Tool:</strong> {feature.machining_params?.tool_type || 'N/A'}
                           </div>
                           <div>
-                            <strong>Feed Rate:</strong> {feature.machiningParameters.feedRate} mm/min
+                            <strong>Feed Rate:</strong> {feature.machining_params?.feed_rate || 0} mm/min
                           </div>
                         </div>
                       </CardContent>
