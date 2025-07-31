@@ -398,7 +398,10 @@ export default function PythonAAGNetAnalyzer() {
                   <div className="text-center">
                     <p className="text-muted-foreground">3D Visualization</p>
                     <p className="text-sm text-muted-foreground mt-2">
-                      Upload an STL file and analyze it to see features in 3D
+                      Upload a STEP file and analyze it to see features in 3D space
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Visualization coming soon for STEP files
                     </p>
                   </div>
                 </div>
