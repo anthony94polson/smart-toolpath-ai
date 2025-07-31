@@ -94,10 +94,44 @@ class OnnxAAGNetService {
       console.log('✅ ONNX AAGNet model loaded successfully');
       console.log('📊 Model inputs:', this.session.inputNames);
       console.log('📊 Model outputs:', this.session.outputNames);
+      
+      // STEP 1: Inspect model input specifications
+      await this.inspectModelInputs();
 
     } catch (error) {
       console.error('❌ Failed to load ONNX model:', error);
       throw new Error(`Failed to initialize ONNX AAGNet model: ${error}`);
+    }
+  }
+
+  // STEP 1: Model input inspection method
+  private async inspectModelInputs(): Promise<void> {
+    if (!this.session) {
+      throw new Error('Session not initialized');
+    }
+
+    console.log('🔍 Inspecting ONNX model input specifications...');
+    
+    try {
+      // Get input metadata
+      for (const inputName of this.session.inputNames) {
+        const input = this.session.inputMetadata[inputName];
+        console.log(`📋 Input '${inputName}':`, {
+          type: input.type,
+          dims: input.dims,
+        });
+      }
+
+      // Get output metadata
+      for (const outputName of this.session.outputNames) {
+        const output = this.session.outputMetadata[outputName];
+        console.log(`📤 Output '${outputName}':`, {
+          type: output.type,
+          dims: output.dims,
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not inspect model metadata:', error);
     }
   }
 
@@ -130,6 +164,9 @@ class OnnxAAGNetService {
       console.log('  - src:', graphInputs.src.dims);
       console.log('  - dst:', graphInputs.dst.dims);
       
+      // STEP 3: Validate input tensors before inference
+      this.validateModelInputs(graphInputs);
+      
       // Run inference with all 6 inputs: node_x, node_uv, face_attr, edge_x, src, dst
       const feeds = {
         'node_x': graphInputs.node_x,
@@ -141,9 +178,8 @@ class OnnxAAGNetService {
       };
       
       console.log('🚀 Running ONNX inference...');
-      const results = await this.session.run(feeds);
-
-      console.log('📊 Raw ONNX outputs:', Object.keys(results));
+      
+      const results = await this.runInferenceWithValidation(feeds);
 
       // Process outputs
       const features = await this.postprocessResults(results);
@@ -231,12 +267,43 @@ class OnnxAAGNetService {
       uvData[baseIdx + 6] = vertex.boundary || 0;
     }
     
-    // Create face attributes - AAGNet expects face features for each face, not node
-    // Since we have triangular mesh, we have numNodes/3 faces (approximately)
-    const numFaces = Math.floor(numNodes / 3);
-    const faceAttr = new Float32Array(numFaces);
-    for (let i = 0; i < numFaces; i++) {
-      faceAttr[i] = 0; // Simple face attribute (could be area, normal angle, etc.)
+    // STEP 2: Fix face_attr tensor generation
+    // Calculate actual number of faces from triangular mesh
+    const numTriangles = Math.floor(numNodes / 3);
+    console.log(`🔺 Calculated triangles: ${numTriangles} from ${numNodes} vertices`);
+    
+    // Create face attributes for actual triangular faces
+    const faceAttr = new Float32Array(numTriangles * 3); // 3 features per face
+    for (let i = 0; i < numTriangles; i++) {
+      const faceBaseIdx = i * 3;
+      // Calculate face normal and area from triangle vertices
+      const v1Idx = i * 3;
+      const v2Idx = i * 3 + 1;
+      const v3Idx = i * 3 + 2;
+      
+      if (v1Idx < numNodes && v2Idx < numNodes && v3Idx < numNodes) {
+        const v1 = mesh.vertices[v1Idx];
+        const v2 = mesh.vertices[v2Idx];
+        const v3 = mesh.vertices[v3Idx];
+        
+        // Calculate face area using cross product
+        const edge1 = [v2.x - v1.x, v2.y - v1.y, v2.z - v1.z];
+        const edge2 = [v3.x - v1.x, v3.y - v1.y, v3.z - v1.z];
+        const crossProduct = [
+          edge1[1] * edge2[2] - edge1[2] * edge2[1],
+          edge1[2] * edge2[0] - edge1[0] * edge2[2],
+          edge1[0] * edge2[1] - edge1[1] * edge2[0]
+        ];
+        const area = 0.5 * Math.sqrt(crossProduct[0] ** 2 + crossProduct[1] ** 2 + crossProduct[2] ** 2);
+        
+        faceAttr[faceBaseIdx] = area; // Face area
+        faceAttr[faceBaseIdx + 1] = Math.sqrt(crossProduct[0] ** 2 + crossProduct[1] ** 2 + crossProduct[2] ** 2); // Normal magnitude
+        faceAttr[faceBaseIdx + 2] = 0; // Face type (could be convex/concave classification)
+      } else {
+        faceAttr[faceBaseIdx] = 0;
+        faceAttr[faceBaseIdx + 1] = 0;
+        faceAttr[faceBaseIdx + 2] = 0;
+      }
     }
     
     // Create edge features (edge_attr_dim = 12)
@@ -267,15 +334,24 @@ class OnnxAAGNetService {
     }
     
     try {
-      console.log(`📊 Creating tensors - nodes: ${numNodes}, faces: ${numFaces}, edges: ${numEdges}`);
-      return {
+      console.log(`📊 Creating tensors - nodes: ${numNodes}, triangles: ${numTriangles}, edges: ${numEdges}`);
+      
+      // Create tensors with corrected dimensions
+      const tensors = {
         node_x: new ort.Tensor('float32', nodeFeatures, [numNodes, 10]),
         node_uv: new ort.Tensor('float32', uvData, [numNodes, 7, 1, 1]),
-        face_attr: new ort.Tensor('float32', faceAttr, [numFaces, 1]),
+        face_attr: new ort.Tensor('float32', faceAttr, [numTriangles, 3]), // Fixed: 3 features per face
         edge_x: new ort.Tensor('float32', edgeFeatures, [numEdges, 12]),
         src: new ort.Tensor('int32', srcIndices, [numEdges]),
         dst: new ort.Tensor('int32', dstIndices, [numEdges])
       };
+      
+      console.log('✅ Tensors created successfully with shapes:');
+      Object.entries(tensors).forEach(([name, tensor]) => {
+        console.log(`  ${name}: [${tensor.dims.join(', ')}]`);
+      });
+      
+      return tensors;
     } catch (error) {
       console.error('❌ Failed to create input tensors:', error);
       throw new Error(`Tensor creation failed: ${error}`);
@@ -354,6 +430,97 @@ class OnnxAAGNetService {
     const header = new Uint8Array(stlData, 0, 80);
     const headerText = new TextDecoder().decode(header).toLowerCase();
     return headerText.includes('solid');
+  }
+
+  // STEP 3: Input validation method
+  private validateModelInputs(inputs: any): void {
+    console.log('🔍 Validating input tensors...');
+    
+    if (!this.session) {
+      throw new Error('Session not initialized for validation');
+    }
+
+    const requiredInputs = this.session.inputNames;
+    const providedInputs = Object.keys(inputs);
+
+    console.log('📋 Required inputs:', requiredInputs);
+    console.log('📋 Provided inputs:', providedInputs);
+
+    // Check if all required inputs are provided
+    for (const inputName of requiredInputs) {
+      if (!providedInputs.includes(inputName)) {
+        throw new Error(`Missing required input: ${inputName}`);
+      }
+    }
+
+    // Validate each input tensor
+    for (const inputName of requiredInputs) {
+      const tensor = inputs[inputName];
+      const expectedMetadata = this.session.inputMetadata[inputName];
+      
+      console.log(`🔍 Validating ${inputName}:`);
+      console.log(`  Expected: type=${expectedMetadata?.type}, dims=${expectedMetadata?.dims}`);
+      console.log(`  Actual: type=${tensor.type}, dims=[${tensor.dims.join(', ')}]`);
+
+      // Validate data types
+      if (expectedMetadata?.type && tensor.type !== expectedMetadata.type) {
+        console.warn(`⚠️ Type mismatch for ${inputName}: expected ${expectedMetadata.type}, got ${tensor.type}`);
+      }
+
+      // Validate non-empty tensors
+      if (!tensor.data || tensor.data.length === 0) {
+        throw new Error(`Input ${inputName} has empty data`);
+      }
+
+      // Check for NaN or infinite values
+      const data = Array.from(tensor.data as ArrayLike<number>);
+      const hasNaN = data.some(val => isNaN(val as number));
+      const hasInfinite = data.some(val => !isFinite(val as number));
+      
+      if (hasNaN) {
+        throw new Error(`Input ${inputName} contains NaN values`);
+      }
+      if (hasInfinite) {
+        throw new Error(`Input ${inputName} contains infinite values`);
+      }
+    }
+
+    console.log('✅ Input validation passed');
+  }
+
+  // STEP 4: Enhanced inference with validation
+  private async runInferenceWithValidation(feeds: any): Promise<ort.InferenceSession.ReturnType> {
+    console.log('🚀 Running ONNX inference with validation...');
+    
+    try {
+      const results = await this.session!.run(feeds);
+      console.log('📊 Raw ONNX outputs:', Object.keys(results));
+      return results;
+    } catch (inferenceError) {
+      console.error('❌ ONNX inference failed with detailed error:', {
+        name: inferenceError.name,
+        message: inferenceError.message,
+        stack: inferenceError.stack
+      });
+      
+      console.error('🔍 Input tensor analysis:');
+      Object.entries(feeds).forEach(([name, tensor]: [string, any]) => {
+        console.error(`  ${name}:`, {
+          dims: tensor.dims,
+          type: tensor.type,
+          dataLength: tensor.data.length,
+          dataType: typeof tensor.data,
+          firstFewValues: Array.from(tensor.data.slice(0, 5))
+        });
+      });
+      
+      // Check if this is a shape mismatch error
+      if (inferenceError.message.includes('invalid input') || inferenceError.message.includes('shape')) {
+        throw new Error(`Model input validation failed: ${inferenceError.message}. The ONNX model expects different input shapes than provided. Please check the model's input specifications.`);
+      }
+      
+      throw new Error(`ONNX inference failed: ${inferenceError.message}`);
+    }
   }
 
   private async postprocessResults(results: ort.InferenceSession.ReturnType): Promise<OnnxAAGNetFeature[]> {
