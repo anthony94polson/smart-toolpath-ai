@@ -57,7 +57,7 @@ class OnnxAAGNetService {
       
       try {
         // Try loading from Supabase storage first
-        modelResponse = await fetch('https://hxdtchuvjzafnajbhkok.supabase.co/storage/v1/object/public/models/weight_88-epoch.onnx');
+        modelResponse = await fetch('https://hxdtchuvjzafnajbhkok.supabase.co/storage/v1/object/public/models/aagnet.onnx');
       } catch (error) {
         console.log('📦 Model not found in storage, using fallback...');
         // Fallback to a public model or create a demo model
