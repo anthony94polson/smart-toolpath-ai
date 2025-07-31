@@ -167,11 +167,11 @@ class OnnxAAGNetService {
       // STEP 3: Validate input tensors before inference
       this.validateModelInputs(graphInputs);
       
-      // Run inference with all 6 inputs: node_x, node_uv, face_attr, edge_x, src, dst
+      // Run inference with all 6 inputs: node_x, node_uv, face.attr, edge_x, src, dst
       const feeds = {
         'node_x': graphInputs.node_x,
         'node_uv': graphInputs.node_uv,
-        'face_attr': graphInputs.face_attr,
+        'face.attr': graphInputs.face_attr,
         'edge_x': graphInputs.edge_x,
         'src': graphInputs.src,
         'dst': graphInputs.dst
