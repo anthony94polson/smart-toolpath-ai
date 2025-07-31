@@ -300,13 +300,14 @@ const EnhancedMLFeatureDetection = ({ geometry, onFeaturesSelected }: EnhancedML
 
       {/* Python AAGNet Analyzer Component */}
       {geometry && (
-        <PythonAAGNetAnalyzer
-          geometry={geometry}
-          fileName="uploaded-model.stl"
-          onFeaturesDetected={handleFeaturesDetected}
-          onProgress={handleProgress}
-          onError={handleError}
-        />
+        <div className="mt-6 p-4 border rounded-lg bg-muted/50">
+          <p className="text-center text-muted-foreground">
+            Python AAGNet Analyzer
+          </p>
+          <p className="text-sm text-center text-muted-foreground mt-2">
+            Use the PyTorch Analyzer tab above to analyze STL files with the native AAGNet model
+          </p>
+        </div>
       )}
     </div>
   );
