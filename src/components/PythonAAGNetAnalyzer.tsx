@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import FeatureInstance from "./FeatureInstance";
+import Model3DViewer from "./Model3DViewer";
 
 interface PythonAAGNetFeature {
   id?: string;
@@ -191,7 +192,18 @@ export default function PythonAAGNetAnalyzer() {
       features: analysisResult.features.map((feature, index) => ({
         id: `feature_${index}`,
         type: feature.type,
-        position: feature.position,
+        position: {
+          x: feature.position[0],
+          y: feature.position[1], 
+          z: feature.position[2]
+        },
+        dimensions: {
+          diameter: feature.dimensions.diameter || 0,
+          width: feature.dimensions.width,
+          height: feature.dimensions.height,
+          depth: feature.dimensions.depth
+        },
+        visible: true,
         confidence: feature.confidence,
         color: getFeatureColor(feature.type),
         description: `${feature.type} (${(feature.confidence * 100).toFixed(1)}% confidence)`
@@ -394,17 +406,25 @@ export default function PythonAAGNetAnalyzer() {
               </TabsContent>
               
               <TabsContent value="visualization">
-                <div className="h-96 flex items-center justify-center border rounded-lg bg-muted/50">
-                  <div className="text-center">
-                    <p className="text-muted-foreground">3D Visualization</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Upload a STEP file and analyze it to see features in 3D space
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Visualization coming soon for STEP files
-                    </p>
+                {getVisualizationData() ? (
+                  <div className="h-96">
+                    <Model3DViewer 
+                      features={getVisualizationData()?.features || []}
+                      selectedFeatureIds={[]}
+                      uploadedFile={uploadedFile}
+                      analysisResults={analysisResult}
+                    />
                   </div>
-                </div>
+                ) : (
+                  <div className="h-96 flex items-center justify-center border rounded-lg bg-muted/50">
+                    <div className="text-center">
+                      <p className="text-muted-foreground">3D Visualization</p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Upload a STEP file and analyze it to see detected features in 3D space
+                      </p>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           )}
