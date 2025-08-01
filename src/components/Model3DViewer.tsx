@@ -70,77 +70,72 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
   const Feature3D = ({ feature, isSelected }: { feature: any; isSelected: boolean }) => {
     const getFeatureGeometry = () => {
       const dims = feature.dimensions;
+      const scale = 0.8; // Make features slightly smaller for better visibility
       
       switch (feature.type) {
         case 'through_hole':
         case 'blind_hole':
-          // Create cylinder for holes
-          const radius = (dims.diameter || dims.width) / 2;
-          const depth = dims.depth || dims.height || 5;
+          const radius = ((dims.diameter || dims.width) / 2) * scale;
+          const depth = (dims.depth || dims.height || 5) * scale;
           return new THREE.CylinderGeometry(radius, radius, depth, 16);
           
         case 'rectangular_pocket':
         case 'rectangular_blind_slot':
         case 'rectangular_through_slot':
-          // Create box for rectangular features
           return new THREE.BoxGeometry(
-            dims.width || 10, 
-            dims.height || 10, 
-            dims.depth || 5
+            (dims.width || 10) * scale, 
+            (dims.height || 10) * scale, 
+            (dims.depth || 5) * scale
           );
           
         case 'circular_end_pocket':
         case 'circular_through_slot':
-          // Create cylinder for circular features
-          const circRadius = (dims.diameter || dims.width) / 2;
-          const circDepth = dims.depth || dims.height || 5;
+          const circRadius = ((dims.diameter || dims.width) / 2) * scale;
+          const circDepth = (dims.depth || dims.height || 5) * scale;
           return new THREE.CylinderGeometry(circRadius, circRadius, circDepth, 16);
           
         case 'triangular_pocket':
         case 'triangular_through_slot':
-          // Create a simplified triangular prism
-          const triGeometry = new THREE.CylinderGeometry(0, dims.width / 2, dims.depth || 5, 3);
+          const triGeometry = new THREE.CylinderGeometry(0, (dims.width / 2) * scale, (dims.depth || 5) * scale, 3);
           return triGeometry;
           
         case 'chamfer':
-          // Create a small angled box for chamfers
           return new THREE.BoxGeometry(
-            dims.width || 2,
-            dims.width || 2, 
-            dims.depth || 1
+            (dims.width || 2) * scale,
+            (dims.width || 2) * scale, 
+            (dims.depth || 1) * scale
           );
           
         case 'round':
-          // Create sphere for rounds/fillets
-          const roundRadius = dims.radius || dims.width / 2 || 2;
+          const roundRadius = (dims.radius || dims.width / 2 || 2) * scale;
           return new THREE.SphereGeometry(roundRadius, 8, 6);
           
-        // Legacy support for simplified types
+        // Legacy support
         case 'pocket':
           return new THREE.BoxGeometry(
-            dims.width || 15,
-            dims.length || dims.height || 15,
-            dims.depth || 5
+            (dims.width || 15) * scale,
+            (dims.length || dims.height || 15) * scale,
+            (dims.depth || 5) * scale
           );
         case 'hole':
           return new THREE.CylinderGeometry(
-            (dims.diameter || dims.width) / 2 || 5,
-            (dims.diameter || dims.width) / 2 || 5,
-            dims.depth || 10,
+            ((dims.diameter || dims.width) / 2 || 5) * scale,
+            ((dims.diameter || dims.width) / 2 || 5) * scale,
+            (dims.depth || 10) * scale,
             16
           );
         case 'slot':
           return new THREE.BoxGeometry(
-            dims.width || 20,
-            dims.length || dims.height || 8,
-            dims.depth || 8
+            (dims.width || 20) * scale,
+            (dims.length || dims.height || 8) * scale,
+            (dims.depth || 8) * scale
           );
           
         default:
           return new THREE.BoxGeometry(
-            dims.width || 5,
-            dims.height || 5,
-            dims.depth || 3
+            (dims.width || 5) * scale,
+            (dims.height || 5) * scale,
+            (dims.depth || 3) * scale
           );
       }
     };
@@ -186,37 +181,42 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
     if (!feature.visible) return null;
 
     return (
-      <mesh
-        position={getFeaturePosition()}
-        onClick={() => onFeatureClick?.(feature.id)}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          document.body.style.cursor = 'pointer';
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = 'default';
-        }}
-      >
-        <primitive object={getFeatureGeometry()} />
-        <meshStandardMaterial
-          color={getFeatureColor()}
-          transparent
-          opacity={isSelected ? 0.9 : 0.7}
-          emissive={getFeatureColor()}
-          emissiveIntensity={isSelected ? 0.3 : 0.1}
-          wireframe={false}
-        />
-        {/* Add wireframe outline for better visibility */}
-        <mesh>
+      <group>
+        {/* Feature highlight overlay */}
+        <mesh
+          position={getFeaturePosition()}
+          onClick={() => onFeatureClick?.(feature.id)}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            document.body.style.cursor = 'pointer';
+          }}
+          onPointerOut={() => {
+            document.body.style.cursor = 'default';
+          }}
+        >
+          <primitive object={getFeatureGeometry()} />
+          <meshStandardMaterial
+            color={getFeatureColor()}
+            transparent
+            opacity={isSelected ? 0.8 : 0.5}
+            emissive={getFeatureColor()}
+            emissiveIntensity={isSelected ? 0.4 : 0.2}
+            wireframe={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        
+        {/* Feature outline for better visibility */}
+        <mesh position={getFeaturePosition()}>
           <primitive object={getFeatureGeometry()} />
           <meshBasicMaterial
             color={getFeatureColor()}
             wireframe={true}
             transparent
-            opacity={0.5}
+            opacity={isSelected ? 0.9 : 0.6}
           />
         </mesh>
-      </mesh>
+      </group>
     );
   };
 

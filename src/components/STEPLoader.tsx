@@ -18,13 +18,11 @@ const STEPLoaderComponent = ({ file, onGeometryLoaded, onError }: STEPLoaderProp
       try {
         // Read the STEP file content
         const arrayBuffer = await file.arrayBuffer();
-        const stepContent = new TextDecoder().decode(arrayBuffer);
         
         console.log('STEPLoader: STEP file loaded, parsing geometry...');
         
-        // For now, create a simplified geometry based on STEP analysis
-        // In production, you would use a proper STEP parser like opencascade.js
-        const geometry = createApproximateGeometryFromSTEP(stepContent, file.name);
+        // Use OpenCascade.js for proper STEP parsing
+        const geometry = await parseSTEPWithOpenCascade(arrayBuffer, file.name);
         
         // Center the geometry
         geometry.computeBoundingBox();
@@ -43,7 +41,22 @@ const STEPLoaderComponent = ({ file, onGeometryLoaded, onError }: STEPLoaderProp
         
       } catch (error) {
         console.error('STEPLoader: Error loading STEP file:', error);
-        onError(`Failed to load STEP file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        // Fallback to simplified geometry if OpenCascade fails
+        try {
+          const stepContent = new TextDecoder().decode(await file.arrayBuffer());
+          const fallbackGeometry = createApproximateGeometryFromSTEP(stepContent, file.name);
+          fallbackGeometry.computeBoundingBox();
+          const boundingBox = fallbackGeometry.boundingBox;
+          if (boundingBox) {
+            const center = new THREE.Vector3();
+            boundingBox.getCenter(center);
+            fallbackGeometry.translate(-center.x, -center.y, -center.z);
+          }
+          fallbackGeometry.computeVertexNormals();
+          onGeometryLoaded(fallbackGeometry);
+        } catch (fallbackError) {
+          onError(`Failed to load STEP file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -57,7 +70,106 @@ const STEPLoaderComponent = ({ file, onGeometryLoaded, onError }: STEPLoaderProp
   return null; // This component doesn't render anything visible
 };
 
-// Create an approximate 3D geometry based on STEP file analysis
+// Parse STEP file using OpenCascade.js
+async function parseSTEPWithOpenCascade(arrayBuffer: ArrayBuffer, fileName: string): Promise<THREE.BufferGeometry> {
+  try {
+    // Import OpenCascade.js dynamically
+    const opencascade = await import('opencascade.js');
+    const oc = await opencascade.default();
+    
+    // Create STEP reader
+    const reader = new oc.STEPCAFControl_Reader_1();
+    const doc = new oc.TDocStd_Document(new oc.TCollection_ExtendedString_1());
+    
+    // Load STEP data
+    const data = new Uint8Array(arrayBuffer);
+    const filename = `/tmp/${fileName}`;
+    oc.FS.writeFile(filename, data);
+    
+    // Read the STEP file
+    const readResult = reader.ReadFile(filename);
+    if (readResult !== oc.IFSelect_RetDone) {
+      throw new Error('Failed to read STEP file');
+    }
+    
+    // Transfer to document
+    if (!reader.Transfer(doc.Main())) {
+      throw new Error('Failed to transfer STEP data');
+    }
+    
+    // Get the main shape
+    const mainLabel = doc.Main();
+    const shapeTool = oc.XCAFDoc_DocumentTool.ShapeTool(mainLabel);
+    const shapeLabels = new oc.TDF_LabelSequence_1();
+    shapeTool.GetShapes(shapeLabels);
+    
+    if (shapeLabels.Length() === 0) {
+      throw new Error('No shapes found in STEP file');
+    }
+    
+    // Get the first shape
+    const shapeLabel = shapeLabels.Value(1);
+    const shape = shapeTool.GetShape(shapeLabel);
+    
+    // Triangulate the shape
+    const triangulation = new oc.BRepMesh_IncrementalMesh_2(shape, 0.1, false, 0.5, false);
+    triangulation.Perform();
+    
+    // Extract mesh data
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    
+    // Iterate through faces and extract triangles
+    const explorer = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    
+    while (explorer.More()) {
+      const face = oc.TopoDS.Face_1(explorer.Current());
+      const location = new oc.TopLoc_Location_1();
+      const triangleSet = oc.BRep_Tool.Triangulation(face, location);
+      
+      if (!triangleSet.IsNull()) {
+        const transform = location.Transformation();
+        const nodeCount = triangleSet.get().NbNodes();
+        const triangleCount = triangleSet.get().NbTriangles();
+        
+        // Extract vertices
+        for (let i = 1; i <= nodeCount; i++) {
+          const node = triangleSet.get().Node(i);
+          const transformedPoint = node.Transformed(transform);
+          vertices.push(transformedPoint.X(), transformedPoint.Y(), transformedPoint.Z());
+        }
+        
+        // Extract triangles
+        for (let i = 1; i <= triangleCount; i++) {
+          const triangle = triangleSet.get().Triangle(i);
+          const [n1, n2, n3] = [triangle.Value(1), triangle.Value(2), triangle.Value(3)];
+          indices.push(n1 - 1, n2 - 1, n3 - 1);
+        }
+      }
+      
+      explorer.Next();
+    }
+    
+    // Create Three.js geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    
+    // Clean up OpenCascade objects
+    doc.delete();
+    reader.delete();
+    triangulation.delete();
+    explorer.delete();
+    
+    return geometry;
+    
+  } catch (error) {
+    console.warn('OpenCascade.js failed, falling back to simplified geometry:', error);
+    throw error;
+  }
+}
+
+// Create an approximate 3D geometry based on STEP file analysis (fallback)
 function createApproximateGeometryFromSTEP(stepContent: string, fileName: string): THREE.BufferGeometry {
   console.log('Creating approximate geometry from STEP file...');
   
