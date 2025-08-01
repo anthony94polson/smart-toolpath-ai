@@ -3,6 +3,7 @@ import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei
 import { Suspense, useMemo, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import STLLoaderComponent from './STLLoader';
+import STEPLoaderComponent from './STEPLoader';
 
 interface Model3DViewerProps {
   geometry?: THREE.BufferGeometry;
@@ -68,47 +69,105 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
 
   const Feature3D = ({ feature, isSelected }: { feature: any; isSelected: boolean }) => {
     const getFeatureGeometry = () => {
+      const dims = feature.dimensions;
+      
       switch (feature.type) {
+        case 'through_hole':
+        case 'blind_hole':
+          // Create cylinder for holes
+          const radius = (dims.diameter || dims.width) / 2;
+          const depth = dims.depth || dims.height || 5;
+          return new THREE.CylinderGeometry(radius, radius, depth, 16);
+          
+        case 'rectangular_pocket':
+        case 'rectangular_blind_slot':
+        case 'rectangular_through_slot':
+          // Create box for rectangular features
+          return new THREE.BoxGeometry(
+            dims.width || 10, 
+            dims.height || 10, 
+            dims.depth || 5
+          );
+          
+        case 'circular_end_pocket':
+        case 'circular_through_slot':
+          // Create cylinder for circular features
+          const circRadius = (dims.diameter || dims.width) / 2;
+          const circDepth = dims.depth || dims.height || 5;
+          return new THREE.CylinderGeometry(circRadius, circRadius, circDepth, 16);
+          
+        case 'triangular_pocket':
+        case 'triangular_through_slot':
+          // Create a simplified triangular prism
+          const triGeometry = new THREE.CylinderGeometry(0, dims.width / 2, dims.depth || 5, 3);
+          return triGeometry;
+          
+        case 'chamfer':
+          // Create a small angled box for chamfers
+          return new THREE.BoxGeometry(
+            dims.width || 2,
+            dims.width || 2, 
+            dims.depth || 1
+          );
+          
+        case 'round':
+          // Create sphere for rounds/fillets
+          const roundRadius = dims.radius || dims.width / 2 || 2;
+          return new THREE.SphereGeometry(roundRadius, 8, 6);
+          
+        // Legacy support for simplified types
         case 'pocket':
           return new THREE.BoxGeometry(
-            feature.dimensions.width,
-            feature.dimensions.length,
-            feature.dimensions.depth
+            dims.width || 15,
+            dims.length || dims.height || 15,
+            dims.depth || 5
           );
         case 'hole':
           return new THREE.CylinderGeometry(
-            feature.dimensions.diameter / 2,
-            feature.dimensions.diameter / 2,
-            feature.dimensions.depth,
+            (dims.diameter || dims.width) / 2 || 5,
+            (dims.diameter || dims.width) / 2 || 5,
+            dims.depth || 10,
             16
           );
         case 'slot':
           return new THREE.BoxGeometry(
-            feature.dimensions.width,
-            feature.dimensions.length,
-            feature.dimensions.depth
+            dims.width || 20,
+            dims.length || dims.height || 8,
+            dims.depth || 8
           );
-        case 'chamfer':
-          return new THREE.ConeGeometry(
-            feature.dimensions.size || 3,
-            feature.dimensions.size || 3,
-            8
-          );
+          
         default:
-          return new THREE.SphereGeometry(2);
+          return new THREE.BoxGeometry(
+            dims.width || 5,
+            dims.height || 5,
+            dims.depth || 3
+          );
       }
     };
 
     const getFeatureColor = () => {
-      if (isSelected) return '#3b82f6'; // blue for selected
-      switch (feature.type) {
-        case 'pocket': return '#ef4444'; // red
-        case 'hole': return '#10b981'; // green  
-        case 'slot': return '#f59e0b'; // yellow
-        case 'chamfer': return '#8b5cf6'; // purple
-        case 'step': return '#ec4899'; // pink
-        default: return '#6b7280'; // gray
-      }
+      if (isSelected) return '#ff6b6b'; // Red for selected
+      
+      const colorMap: { [key: string]: string } = {
+        'through_hole': '#4dabf7',
+        'blind_hole': '#339af0', 
+        'rectangular_pocket': '#51cf66',
+        'circular_end_pocket': '#40c057',
+        'triangular_pocket': '#69db7c',
+        'rectangular_through_slot': '#9775fa',
+        'triangular_through_slot': '#845ef7',
+        'circular_through_slot': '#7950f2',
+        'chamfer': '#ffa94d',
+        'round': '#ffd43b',
+        'rectangular_blind_step': '#ff8787',
+        'circular_blind_step': '#ffa8a8',
+        // Legacy support
+        'pocket': '#51cf66',
+        'hole': '#4dabf7', 
+        'slot': '#9775fa'
+      };
+      
+      return colorMap[feature.type] || '#868e96';
     };
 
     const getFeaturePosition = (): [number, number, number] => {
@@ -167,18 +226,26 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
       {uploadedFile && (
         <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-xs z-10">
           File: {uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)}KB)
-          <br />Type: STL (Real Model)
+          <br />Type: {uploadedFile.name.toLowerCase().endsWith('.step') || uploadedFile.name.toLowerCase().endsWith('.stp') ? 'STEP (CAD Model)' : 'STL (3D Model)'}
           <br />Features: {features.length} detected
         </div>
       )}
       
-      {/* STL File Loader */}
-      {uploadedFile && uploadedFile.name.toLowerCase().endsWith('.stl') && (
-        <STLLoaderComponent
-          file={uploadedFile}
-          onGeometryLoaded={handleSTLGeometryLoaded}
-          onError={handleLoadError}
-        />
+      {/* File Loader - handle both STL and STEP files */}
+      {uploadedFile && (
+        uploadedFile.name.toLowerCase().endsWith('.stl') ? (
+          <STLLoaderComponent
+            file={uploadedFile}
+            onGeometryLoaded={handleSTLGeometryLoaded}
+            onError={handleLoadError}
+          />
+        ) : (uploadedFile.name.toLowerCase().endsWith('.step') || uploadedFile.name.toLowerCase().endsWith('.stp')) ? (
+          <STEPLoaderComponent
+            file={uploadedFile}
+            onGeometryLoaded={handleSTLGeometryLoaded}
+            onError={handleLoadError}
+          />
+        ) : null
       )}
       
       <Canvas>
