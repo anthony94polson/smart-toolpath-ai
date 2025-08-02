@@ -94,15 +94,12 @@ export default function PythonAAGNetAnalyzer() {
       console.log('🔄 Calling Python AAGNet inference...');
 
       // Call Python AAGNet inference edge function with STEP data
-      const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-inference', {
+      const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-analysis', {
         body: {
-          step_data: base64Data,
-          file_name: file.name,
-          analysis_params: {
-            inst_thres: 0.5,
-            bottom_thres: 0.5,
-            center_and_scale: false,
-            normalize: true
+          stepData: base64Data,
+          analysisParams: {
+            confidence_threshold: 0.5,
+            model_type: 'full'
           }
         }
       });
