@@ -24,7 +24,7 @@ serve(async (req) => {
     
     // For now, return mock data that matches your real system format
     // This will be replaced with actual Python AAGNet inference
-    const mockFeatures = generateMockFeatures();
+    const mockFeatures = generateDeterministicFeatures(stepData);
     
     const result = {
       features: mockFeatures,
@@ -57,46 +57,66 @@ serve(async (req) => {
   }
 });
 
-function generateMockFeatures() {
+function generateDeterministicFeatures(stepData: string) {
+  // Create deterministic features based on STEP file content hash
+  let hash = 0;
+  for (let i = 0; i < Math.min(stepData.length, 1000); i++) {
+    const char = stepData.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+
+  // Seeded random function
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  };
+
   const featureTypes = [
     'through_hole', 'blind_hole', 'rectangular_pocket', 'circular_end_pocket',
     'chamfer', 'rectangular_through_slot', 'triangular_passage', 'round'
   ];
   
   const features = [];
-  const numFeatures = Math.floor(Math.random() * 8) + 3; // 3-10 features
+  const numFeatures = Math.floor(seededRandom(hash) * 5) + 4; // 4-8 features (deterministic)
   
   for (let i = 0; i < numFeatures; i++) {
-    const featureType = featureTypes[Math.floor(Math.random() * featureTypes.length)];
+    const seed = hash + i * 12345;
+    const typeIndex = Math.floor(seededRandom(seed + 1) * featureTypes.length);
+    const featureType = featureTypes[typeIndex];
     
     features.push({
       id: `feature_${i}`,
       type: featureType,
-      confidence: 0.75 + Math.random() * 0.24, // 0.75-0.99
+      confidence: 0.75 + seededRandom(seed + 2) * 0.24, // 0.75-0.99 (deterministic)
       position: {
-        x: (Math.random() - 0.5) * 100,
-        y: (Math.random() - 0.5) * 80,
-        z: (Math.random() - 0.5) * 25
+        x: (seededRandom(seed + 3) - 0.5) * 100,
+        y: (seededRandom(seed + 4) - 0.5) * 80,
+        z: (seededRandom(seed + 5) - 0.5) * 25
       },
-      dimensions: generateFeatureDimensions(featureType),
-      machining_parameters: generateMachiningParams(featureType),
+      dimensions: generateFeatureDimensions(featureType, seed + 6),
+      machining_parameters: generateMachiningParams(featureType, seed + 7),
       // Critical: Include face IDs that belong to this feature
       face_ids: generateFeatureFaceIds(i),
       // Bounding box for the feature
-      bounding_box: generateFeatureBoundingBox()
+      bounding_box: generateFeatureBoundingBox(seed + 8)
     });
   }
   
   return features;
 }
 
-function generateFeatureDimensions(featureType: string) {
+function generateFeatureDimensions(featureType: string, seed: number = 0) {
+  const seededRandom = (s: number) => {
+    const x = Math.sin(s) * 10000;
+    return x - Math.floor(x);
+  };
   switch (featureType) {
     case 'through_hole':
     case 'blind_hole':
       return {
-        diameter: 5 + Math.random() * 15,
-        depth: featureType === 'through_hole' ? 'through' : 10 + Math.random() * 20
+        diameter: 5 + seededRandom(seed) * 15,
+        depth: featureType === 'through_hole' ? 'through' : 10 + seededRandom(seed + 1) * 20
       };
     case 'rectangular_pocket':
       return {
@@ -138,7 +158,11 @@ function generateFeatureDimensions(featureType: string) {
   }
 }
 
-function generateMachiningParams(featureType: string) {
+function generateMachiningParams(featureType: string, seed: number = 0) {
+  const seededRandom = (s: number) => {
+    const x = Math.sin(s) * 10000;
+    return x - Math.floor(x);
+  };
   const toolTypes = {
     'through_hole': 'drill',
     'blind_hole': 'drill',
@@ -154,10 +178,10 @@ function generateMachiningParams(featureType: string) {
   
   return {
     tool_type: toolType,
-    tool_diameter: 2 + Math.random() * 10,
-    spindle_speed: 1000 + Math.random() * 4000,
-    feed_rate: 100 + Math.random() * 500,
-    cutting_depth: 0.5 + Math.random() * 2
+    tool_diameter: 2 + seededRandom(seed) * 10,
+    spindle_speed: 1000 + seededRandom(seed + 1) * 4000,
+    feed_rate: 100 + seededRandom(seed + 2) * 500,
+    cutting_depth: 0.5 + seededRandom(seed + 3) * 2
   };
 }
 
@@ -173,14 +197,19 @@ function generateFeatureFaceIds(featureIndex: number) {
   return faceIds;
 }
 
-function generateFeatureBoundingBox() {
-  const centerX = (Math.random() - 0.5) * 100;
-  const centerY = (Math.random() - 0.5) * 80;
-  const centerZ = (Math.random() - 0.5) * 25;
+function generateFeatureBoundingBox(seed: number = 0) {
+  const seededRandom = (s: number) => {
+    const x = Math.sin(s) * 10000;
+    return x - Math.floor(x);
+  };
+
+  const centerX = (seededRandom(seed) - 0.5) * 100;
+  const centerY = (seededRandom(seed + 1) - 0.5) * 80;
+  const centerZ = (seededRandom(seed + 2) - 0.5) * 25;
   
-  const sizeX = 5 + Math.random() * 20;
-  const sizeY = 5 + Math.random() * 15;
-  const sizeZ = 2 + Math.random() * 10;
+  const sizeX = 5 + seededRandom(seed + 3) * 20;
+  const sizeY = 5 + seededRandom(seed + 4) * 15;
+  const sizeZ = 2 + seededRandom(seed + 5) * 10;
   
   return {
     min: [centerX - sizeX/2, centerY - sizeY/2, centerZ - sizeZ/2],

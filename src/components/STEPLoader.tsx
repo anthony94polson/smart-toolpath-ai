@@ -127,8 +127,10 @@ function createApproximateGeometryFromSTEP(stepContent: string, fileName: string
   const vertices = [];
   const indices = [];
   
-  // Define the basic box vertices
-  const w = width / 2, h = height / 2, d = depth / 2;
+  // Ensure valid, finite dimensions
+  const w = Math.max(width / 2, 0.5);
+  const h = Math.max(height / 2, 0.5);
+  const d = Math.max(depth / 2, 0.5);
   
   // Bottom face (z = -d)
   vertices.push(-w, -h, -d,  w, -h, -d,  w,  h, -d, -w,  h, -d);
