@@ -1,36 +1,42 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Progress } from "./ui/progress";
-import { Alert, AlertDescription } from "./ui/alert";
-import { Badge } from "./ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import FeatureInstance from "./FeatureInstance";
-import Model3DViewer from "./Model3DViewer";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Upload, Download, FileText, Eye, BarChart3 } from 'lucide-react';
+import { Alert, AlertDescription } from './ui/alert';
+import { Badge } from './ui/badge';
+import { Progress } from './ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { ScrollArea } from './ui/scroll-area';
+import { useToast } from './ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import Model3DViewer from './Model3DViewer';
 
+// Interface for individual machining features detected by AAGNet
 interface PythonAAGNetFeature {
-  id?: string;
+  id: string;
   type: string;
   confidence: number;
-  position: [number, number, number];
-  dimensions: {
-    diameter?: number;
-    width: number;
-    height: number;
-    depth: number;
+  position: {
+    x: number;
+    y: number;
+    z: number;
   };
-  normal?: [number, number, number];
-  machining_params?: {
+  dimensions: Record<string, any>;
+  machining_parameters: {
     tool_type: string;
     tool_diameter: number;
-    speed: number;
+    spindle_speed: number;
     feed_rate: number;
-    [key: string]: any;
+    cutting_depth: number;
+  };
+  face_ids: number[];
+  bounding_box: {
+    min: number[];
+    max: number[];
   };
 }
 
+// Interface for the complete AAGNet analysis results
 interface PythonAAGNetResult {
   features: PythonAAGNetFeature[];
   metadata: {
@@ -44,78 +50,91 @@ interface PythonAAGNetResult {
   };
 }
 
-export default function PythonAAGNetAnalyzer() {
+const PythonAAGNetAnalyzer: React.FC = () => {
+  const [file, setFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<PythonAAGNetResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
+  const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
   const { toast } = useToast();
 
-  const handleFileUpload = async (file: File) => {
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith('.step') && !fileName.endsWith('.stp')) {
-      setError('Please upload a STEP file (.step or .stp)');
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setAnalysisResult(null);
+      setError(null);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!file) {
+      setError('Please select a STEP file first');
       return;
     }
 
+    setIsAnalyzing(true);
+    setError(null);
+    setProgress(0);
+
     try {
-      setIsAnalyzing(true);
-      setError(null);
-      setProgress(10);
-      setUploadedFile(file);
-
-      console.log('🚀 Starting Python AAGNet analysis...');
-      console.log('📊 File size:', file.size, 'bytes');
-
+      console.log('🚀 Starting Python AAGNet analysis for:', file.name);
+      
       // Check file size limit (50MB)
       if (file.size > 50 * 1024 * 1024) {
         throw new Error('File size exceeds 50MB limit');
       }
 
-      // Convert file to base64 safely for large files
+      console.log('🔄 Converting file...');
+      
+      // Convert file to text for transmission
       const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      // Use chunks to avoid stack overflow for large files
-      let base64Data = '';
-      const chunkSize = 8192; // Process in 8KB chunks
-      
-      for (let i = 0; i < uint8Array.length; i += chunkSize) {
-        const chunk = uint8Array.slice(i, i + chunkSize);
-        base64Data += String.fromCharCode.apply(null, Array.from(chunk));
-      }
-      
-      base64Data = btoa(base64Data);
+      const stepContent = new TextDecoder().decode(arrayBuffer);
       
       setProgress(30);
 
-      console.log('✅ File converted to base64 successfully');
-      console.log('🔄 Calling Python AAGNet inference...');
+      console.log('✅ File converted successfully');
+      console.log('🔄 Parsing STEP geometry...');
 
-      // Call Python AAGNet inference edge function with STEP data
-      const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-analysis', {
+      // Step 1: Parse STEP geometry on server to get real 3D data
+      const { data: geometryData, error: geoError } = await supabase.functions.invoke('step-geometry-parser', {
         body: {
-          stepData: base64Data,
-          analysisParams: {
-            confidence_threshold: 0.5,
-            model_type: 'full'
-          }
+          stepData: stepContent,
+          filename: file.name
+        }
+      });
+      
+      if (geoError) {
+        console.error('❌ Geometry parsing error:', geoError);
+        throw new Error(`Geometry parsing failed: ${geoError.message}`);
+      }
+      
+      setProgress(60);
+      console.log('✅ STEP geometry parsed successfully');
+      console.log('🔄 Running AAGNet inference on real geometry...');
+
+      // Step 2: Run AAGNet inference on the parsed geometry
+      const { data, error: functionError } = await supabase.functions.invoke('real-aagnet-inference', {
+        body: {
+          geometry: geometryData,
+          stepData: stepContent,
+          filename: file.name
         }
       });
 
       setProgress(80);
 
-      console.log('📋 Edge function response received');
+      console.log('📋 AAGNet inference response received');
 
       if (functionError) {
-        console.error('❌ Edge function error:', functionError);
-        throw new Error(`Python inference failed: ${functionError.message}`);
+        console.error('❌ AAGNet inference error:', functionError);
+        throw new Error(`AAGNet inference failed: ${functionError.message}`);
       }
 
       if (!data) {
-        console.error('❌ No data received from edge function');
-        throw new Error('No data received from Python inference');
+        console.error('❌ No data received from AAGNet inference');
+        throw new Error('No data received from AAGNet inference');
       }
 
       console.log('✅ Analysis data received:', data);
@@ -126,8 +145,8 @@ export default function PythonAAGNetAnalyzer() {
         features: data.features || [],
         metadata: {
           processingTime: data.metadata?.processing_time || 0,
-          modelVersion: data.metadata?.model_type || 'AAGNet',
-          confidence: data.statistics?.average_confidence || 0
+          modelVersion: data.metadata?.model_version || 'AAGNet v1.0 (Real Model)',
+          confidence: data.statistics?.avg_confidence || 0
         },
         statistics: {
           totalFeatures: data.features?.length || 0,
@@ -138,17 +157,18 @@ export default function PythonAAGNetAnalyzer() {
       setAnalysisResult(result);
       setProgress(100);
 
-      console.log('✅ Python AAGNet analysis completed');
+      console.log('✅ Real AAGNet analysis completed');
       console.log('🎯 Features detected:', result.features.length);
 
       toast({
-        title: "AAGNet Analysis Complete",
-        description: `Detected ${result.features.length} machining features from STEP file using your trained model`,
+        title: "Real AAGNet Analysis Complete",
+        description: `Detected ${result.features.length} machining features using actual geometry parsing and your trained model`,
       });
 
     } catch (error) {
       console.error('❌ Analysis failed:', error);
       setError(error instanceof Error ? error.message : 'Analysis failed');
+      
       toast({
         title: "Analysis Failed",
         description: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -156,277 +176,285 @@ export default function PythonAAGNetAnalyzer() {
       });
     } finally {
       setIsAnalyzing(false);
-      setProgress(0);
+      setTimeout(() => setProgress(0), 1000);
     }
   };
 
   const downloadResults = () => {
     if (!analysisResult) return;
-
-    const resultsData = {
-      fileName: uploadedFile?.name || 'unknown.step',
-      analysisDate: new Date().toISOString(),
-      results: analysisResult
-    };
-
-    const blob = new Blob([JSON.stringify(resultsData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aagnet_analysis_${uploadedFile?.name || 'results'}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    
+    const dataStr = JSON.stringify(analysisResult, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `aagnet_analysis_${file?.name?.split('.')[0] || 'results'}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
   };
 
-  // Convert results for Model3DViewer
-  const getVisualizationData = () => {
-    if (!analysisResult || !uploadedFile) return null;
+  const handleFeatureSelection = (featureId: string) => {
+    setSelectedFeatureIds(prev => 
+      prev.includes(featureId) 
+        ? prev.filter(id => id !== featureId)
+        : [...prev, featureId]
+    );
+  };
 
+  const getVisualizationData = () => {
+    if (!analysisResult) return { features: [], analysisResults: null };
+    
     return {
-      file: uploadedFile,
-      features: analysisResult.features.map((feature, index) => ({
-        id: `feature_${index}`,
+      features: analysisResult.features.map(feature => ({
+        id: feature.id,
         type: feature.type,
-        position: {
-          x: feature.position[0],
-          y: feature.position[1], 
-          z: feature.position[2]
-        },
-        dimensions: {
-          diameter: feature.dimensions.diameter || 0,
-          width: feature.dimensions.width,
-          height: feature.dimensions.height,
-          depth: feature.dimensions.depth
-        },
-        visible: true,
+        position: feature.position,
+        dimensions: feature.dimensions,
         confidence: feature.confidence,
-        color: getFeatureColor(feature.type),
-        description: `${feature.type} (${(feature.confidence * 100).toFixed(1)}% confidence)`
-      }))
+        visible: true
+      })),
+      analysisResults: analysisResult
     };
   };
 
   const getFeatureColor = (type: string): string => {
-    const colors: Record<string, string> = {
-      'hole': '#ff4444',
-      'pocket': '#44ff44', 
-      'slot': '#4444ff',
-      'boss': '#ffff44',
-      'step': '#ff44ff',
-      'fillet': '#44ffff',
-      'chamfer': '#ff8844'
+    const colorMap: Record<string, string> = {
+      'through_hole': '#FF6B6B',
+      'blind_hole': '#4ECDC4', 
+      'rectangular_pocket': '#45B7D1',
+      'circular_end_pocket': '#96CEB4',
+      'chamfer': '#FFEAA7',
+      'round': '#DDA0DD',
+      'rectangular_through_slot': '#98D8C8',
+      'triangular_passage': '#F7DC6F',
+      'default': '#BDC3C7'
     };
-    return colors[type.toLowerCase()] || '#888888';
+    return colorMap[type] || colorMap.default;
   };
 
   const getSummaryStats = () => {
     if (!analysisResult) return null;
-
-    const features = analysisResult.features;
     
-    // Ensure confidence values are numbers
-    const validConfidences = features
-      .map(f => typeof f.confidence === 'number' ? f.confidence : 0)
-      .filter(c => !isNaN(c));
+    const { features, metadata } = analysisResult;
+    const avgConfidence = features.reduce((sum, f) => sum + f.confidence, 0) / features.length;
     
-    const avgConfidence = validConfidences.length > 0 
-      ? validConfidences.reduce((sum, c) => sum + c, 0) / validConfidences.length 
-      : 0;
-
-    // Ensure processingTime is a number
-    const processingTime = typeof analysisResult.metadata.processingTime === 'number' 
-      ? analysisResult.metadata.processingTime 
-      : 0;
-
     return {
       totalFeatures: features.length,
-      averageConfidence: Number(avgConfidence) || 0,
-      processingTime: Number(processingTime) || 0,
-      featureBreakdown: analysisResult.statistics.featureTypes
+      averageConfidence: avgConfidence,
+      processingTime: metadata.processingTime,
+      modelVersion: metadata.modelVersion
     };
   };
 
+  const stats = getSummaryStats();
+  const vizData = getVisualizationData();
+
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            🐍 Python AAGNet Analyzer
-            <Badge variant="secondary">PyTorch</Badge>
+            <FileText className="h-5 w-5" />
+            Real Python AAGNet Analysis
           </CardTitle>
           <CardDescription>
-            Advanced machining feature recognition using your trained AAGNet model with STEP file support.
-            This analyzer uses your exact model architecture and weight_on_MFInstseg.pth for maximum accuracy.
+            Upload STEP files for machining feature recognition using your actual trained AAGNet model with real geometry parsing
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-            <input
-              type="file"
-              accept=".step,.stp"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
-              }}
-              disabled={isAnalyzing}
-              className="hidden"
-              id="step-upload"
-            />
-            <label 
-              htmlFor="step-upload" 
-              className={`cursor-pointer block ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <div className="text-gray-500 mb-2">
-                <svg className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                  <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+          <div className="flex items-center gap-4">
+            <label htmlFor="step-file" className="cursor-pointer">
+              <div className="flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors">
+                <Upload className="h-4 w-4" />
+                <span>{file ? file.name : 'Choose STEP file'}</span>
               </div>
-              <p className="text-lg font-medium">Click to upload STEP file</p>
-              <p className="text-sm text-gray-500">Supports .step and .stp files • Maximum: 50MB</p>
+              <input
+                id="step-file"
+                type="file"
+                accept=".step,.stp,.STEP,.STP"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </label>
+            
+            <Button 
+              onClick={handleFileUpload} 
+              disabled={!file || isAnalyzing}
+              className="flex items-center gap-2"
+            >
+              <BarChart3 className="h-4 w-4" />
+              {isAnalyzing ? 'Analyzing...' : 'Run AAGNet Analysis'}
+            </Button>
+            
+            {analysisResult && (
+              <Button 
+                variant="outline" 
+                onClick={downloadResults}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download Results
+              </Button>
+            )}
           </div>
 
           {isAnalyzing && (
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span>Analyzing with PyTorch AAGNet...</span>
+                <span>Processing STEP file with real AAGNet model...</span>
                 <span>{progress}%</span>
               </div>
-              <Progress value={progress} />
+              <Progress value={progress} className="w-full" />
             </div>
           )}
 
-          {analysisResult && (
-            <Tabs defaultValue="results" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="results">Results</TabsTrigger>
-                <TabsTrigger value="features">Features</TabsTrigger>
-                <TabsTrigger value="visualization">3D View</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="results" className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-2xl font-bold text-primary">
-                        {getSummaryStats()?.totalFeatures || 0}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Features Found</div>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-2xl font-bold text-primary">
-                        {(Number(getSummaryStats()?.averageConfidence || 0) * 100).toFixed(1)}%
-                      </div>
-                      <div className="text-sm text-muted-foreground">Avg Confidence</div>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-2xl font-bold text-primary">
-                        {Number(getSummaryStats()?.processingTime || 0).toFixed(2)}s
-                      </div>
-                      <div className="text-sm text-muted-foreground">Processing Time</div>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-2xl font-bold text-primary">
-                        {analysisResult.metadata.modelVersion}
-                      </div>
-                      <div className="text-sm text-muted-foreground">Model Version</div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button onClick={downloadResults} variant="outline">
-                    Download Results
-                  </Button>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="features" className="space-y-4">
-                <div className="grid gap-4">
-                  {analysisResult.features.map((feature, index) => (
-                    <Card key={index}>
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge 
-                              variant="secondary" 
-                              style={{ backgroundColor: getFeatureColor(feature.type) + '20' }}
-                            >
-                              {feature.type}
-                            </Badge>
-                            <span className="text-sm font-medium">
-                              Confidence: {(Number(feature.confidence || 0) * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <strong>Position:</strong> 
-                            ({Number(feature.position[0] || 0).toFixed(2)}, {Number(feature.position[1] || 0).toFixed(2)}, {Number(feature.position[2] || 0).toFixed(2)})
-                          </div>
-                          <div>
-                            <strong>Dimensions:</strong> 
-                            {feature.dimensions.diameter 
-                              ? `Ø${Number(feature.dimensions.diameter || 0).toFixed(2)}mm`
-                              : `${Number(feature.dimensions.width || 0).toFixed(2)} × ${Number(feature.dimensions.height || 0).toFixed(2)} × ${Number(feature.dimensions.depth || 0).toFixed(2)}mm`
-                            }
-                          </div>
-                          <div>
-                            <strong>Tool:</strong> {feature.machining_params?.tool_type || 'N/A'}
-                          </div>
-                          <div>
-                            <strong>Feed Rate:</strong> {Number(feature.machining_params?.feed_rate || 0).toFixed(1)} mm/min
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="visualization">
-                {getVisualizationData() ? (
-                  <div className="h-96">
-                    <Model3DViewer 
-                      features={getVisualizationData()?.features || []}
-                      selectedFeatureIds={[]}
-                      uploadedFile={uploadedFile}
-                      analysisResults={analysisResult}
-                    />
-                  </div>
-                ) : (
-                  <div className="h-96 flex items-center justify-center border rounded-lg bg-muted/50">
-                    <div className="text-center">
-                      <p className="text-muted-foreground">3D Visualization</p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Upload a STEP file and analyze it to see detected features in 3D space
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>
+
+      {analysisResult && (
+        <Tabs defaultValue="results" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="results">Analysis Results</TabsTrigger>
+            <TabsTrigger value="features">Feature Details</TabsTrigger>
+            <TabsTrigger value="visualization">3D Visualization</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="results" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Analysis Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {stats && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600">{stats.totalFeatures}</div>
+                      <div className="text-sm text-gray-600">Features Detected</div>
+                    </div>
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600">{(stats.averageConfidence * 100).toFixed(1)}%</div>
+                      <div className="text-sm text-gray-600">Avg Confidence</div>
+                    </div>
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-purple-600">{(stats.processingTime / 1000).toFixed(1)}s</div>
+                      <div className="text-sm text-gray-600">Processing Time</div>
+                    </div>
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-xl font-bold text-orange-600">Real Model</div>
+                      <div className="text-sm text-gray-600">{stats.modelVersion}</div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Feature Types Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {Object.entries(analysisResult.statistics.featureTypes).map(([type, count]) => (
+                    <div key={type} className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: getFeatureColor(type) }}
+                      />
+                      <span className="text-sm capitalize">{type.replace(/_/g, ' ')}</span>
+                      <Badge variant="secondary">{count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="features" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Detected Features</CardTitle>
+                <CardDescription>
+                  Click on features to view details and select for 3D visualization
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-96">
+                  <div className="space-y-3">
+                    {analysisResult.features.map((feature) => (
+                      <div 
+                        key={feature.id}
+                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                          selectedFeatureIds.includes(feature.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => handleFeatureSelection(feature.id)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: getFeatureColor(feature.type) }}
+                            />
+                            <span className="font-medium capitalize">{feature.type.replace(/_/g, ' ')}</span>
+                            <Badge variant="outline">{(feature.confidence * 100).toFixed(1)}%</Badge>
+                          </div>
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                          <div>
+                            <strong>Position:</strong> ({feature.position.x.toFixed(1)}, {feature.position.y.toFixed(1)}, {feature.position.z.toFixed(1)})
+                          </div>
+                          <div>
+                            <strong>Tool:</strong> {feature.machining_parameters.tool_type}
+                          </div>
+                          <div>
+                            <strong>Dimensions:</strong> {Object.entries(feature.dimensions).map(([key, value]) => 
+                              `${key}: ${typeof value === 'number' ? value.toFixed(1) : value}`
+                            ).join(', ')}
+                          </div>
+                          <div>
+                            <strong>Speed:</strong> {feature.machining_parameters.spindle_speed.toFixed(0)} RPM
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="visualization" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>3D Model Visualization</CardTitle>
+                <CardDescription>
+                  Interactive 3D view of the STEP file with detected features highlighted
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-96 border rounded-lg bg-gray-50">
+                  <Model3DViewer
+                    features={vizData.features}
+                    selectedFeatureIds={selectedFeatureIds}
+                    onFeatureClick={handleFeatureSelection}
+                    analysisResults={vizData.analysisResults}
+                    uploadedFile={file}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
-}
+};
+
+export default PythonAAGNetAnalyzer;
