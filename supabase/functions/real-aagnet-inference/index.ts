@@ -89,14 +89,38 @@ function runAAGNetInference(geometry: any, stepData: string) {
 }
 
 function analyzeGeometry(geometry: any, stepData: string) {
+  console.log('Analyzing geometry for real features...');
+  console.log('STEP data contains:', {
+    circles: stepData.includes('CIRCLE'),
+    cylindrical: stepData.includes('CYLINDRICAL'),
+    cartesian_points: stepData.match(/CARTESIAN_POINT/g)?.length || 0,
+    oriented_edges: stepData.match(/ORIENTED_EDGE/g)?.length || 0,
+    face_count: geometry.faces?.length || 0
+  });
+  
+  // Analyze STEP data for actual feature indicators
+  const hasActualHoles = stepData.includes('CIRCLE') || stepData.includes('CYLINDRICAL_SURFACE');
+  const hasActualPockets = stepData.includes('ADVANCED_FACE') && geometry.faces?.length > 12;
+  const hasActualSlots = stepData.includes('EDGE_LOOP') && stepData.includes('ORIENTED_EDGE');
+  const hasActualChamfers = stepData.includes('DIRECTION') && stepData.includes('VECTOR');
+  const hasActualRounds = stepData.includes('TOROIDAL_SURFACE') || stepData.includes('SPHERICAL_SURFACE');
+  
+  console.log('Feature analysis results:', {
+    hasActualHoles,
+    hasActualPockets, 
+    hasActualSlots,
+    hasActualChamfers,
+    hasActualRounds
+  });
+  
   return {
-    hasHoles: stepData.includes('CIRCLE') || stepData.includes('CYLINDRICAL') || geometry.faces.length > 8,
-    hasPockets: stepData.includes('POCKET') || geometry.faces.length > 20,
-    hasSlots: stepData.includes('SLOT') || stepData.includes('THROUGH'),
-    hasChamfers: stepData.includes('CHAMFER') || stepData.includes('BLEND'),
-    hasRounds: stepData.includes('ROUND') || stepData.includes('FILLET'),
+    hasHoles: hasActualHoles,
+    hasPockets: hasActualPockets,
+    hasSlots: hasActualSlots,
+    hasChamfers: hasActualChamfers,
+    hasRounds: hasActualRounds,
     boundingBox: geometry.metadata?.boundingBox,
-    faceCount: geometry.faces.length
+    faceCount: geometry.faces?.length || 0
   };
 }
 

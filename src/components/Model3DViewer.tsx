@@ -268,10 +268,10 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
               <primitive object={partMaterial} />
             </mesh>
           ) : (
-            /* Fallback geometry if STL not loaded yet */
+            /* Show message when no geometry is loaded */
             <mesh position={[0, 0, 0]}>
-              <boxGeometry args={[120, 80, 25]} />
-              <primitive object={partMaterial} />
+              <boxGeometry args={[10, 10, 10]} />
+              <meshStandardMaterial color="#cccccc" wireframe={true} />
             </mesh>
           )}
           
