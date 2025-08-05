@@ -255,8 +255,13 @@ function extractRoundFeatures(geometry: any, random: () => number) {
 }
 
 function generateFeaturePosition(boundingBox: any, random: () => number) {
-  const [minX, minY, minZ] = boundingBox.min;
-  const [maxX, maxY, maxZ] = boundingBox.max;
+  // Handle both array and object format for bounding box
+  const minX = Array.isArray(boundingBox.min) ? boundingBox.min[0] : (boundingBox.minX || 0);
+  const minY = Array.isArray(boundingBox.min) ? boundingBox.min[1] : (boundingBox.minY || 0);
+  const minZ = Array.isArray(boundingBox.min) ? boundingBox.min[2] : (boundingBox.minZ || 0);
+  const maxX = Array.isArray(boundingBox.max) ? boundingBox.max[0] : (boundingBox.maxX || 10);
+  const maxY = Array.isArray(boundingBox.max) ? boundingBox.max[1] : (boundingBox.maxY || 10);
+  const maxZ = Array.isArray(boundingBox.max) ? boundingBox.max[2] : (boundingBox.maxZ || 10);
   
   return {
     x: minX + random() * (maxX - minX),
@@ -279,8 +284,13 @@ function generateFeatureFaceIds(baseId: number, featureType: string) {
 }
 
 function generateFeatureBoundingBox(geometryBBox: any, random: () => number) {
-  const [minX, minY, minZ] = geometryBBox.min;
-  const [maxX, maxY, maxZ] = geometryBBox.max;
+  // Handle both array and object format for bounding box
+  const minX = Array.isArray(geometryBBox.min) ? geometryBBox.min[0] : (geometryBBox.minX || 0);
+  const minY = Array.isArray(geometryBBox.min) ? geometryBBox.min[1] : (geometryBBox.minY || 0);
+  const minZ = Array.isArray(geometryBBox.min) ? geometryBBox.min[2] : (geometryBBox.minZ || 0);
+  const maxX = Array.isArray(geometryBBox.max) ? geometryBBox.max[0] : (geometryBBox.maxX || 10);
+  const maxY = Array.isArray(geometryBBox.max) ? geometryBBox.max[1] : (geometryBBox.maxY || 10);
+  const maxZ = Array.isArray(geometryBBox.max) ? geometryBBox.max[2] : (geometryBBox.maxZ || 10);
   
   const centerX = minX + random() * (maxX - minX);
   const centerY = minY + random() * (maxY - minY);
