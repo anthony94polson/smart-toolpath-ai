@@ -36,7 +36,7 @@ serve(async (req) => {
         geometry_info: {
           vertex_count: geometry.vertices.length / 3,
           face_count: geometry.faces.length,
-          bounding_box: geometry.boundingBox
+          bounding_box: geometry.metadata?.boundingBox
         }
       },
       statistics: {
@@ -103,7 +103,7 @@ function analyzeGeometry(geometry: any, stepData: string) {
     hasSlots: stepData.includes('SLOT') || stepData.includes('THROUGH'),
     hasChamfers: stepData.includes('CHAMFER') || stepData.includes('BLEND'),
     hasRounds: stepData.includes('ROUND') || stepData.includes('FILLET'),
-    boundingBox: geometry.boundingBox,
+    boundingBox: geometry.metadata?.boundingBox,
     faceCount: geometry.faces.length
   };
 }
@@ -120,7 +120,7 @@ function extractHoleFeatures(geometry: any, random: () => number) {
       id: `hole_${i}`,
       type: isThrough ? 'through_hole' : 'blind_hole',
       confidence: 0.85 + random() * 0.14,
-      position: generateFeaturePosition(geometry.boundingBox, random),
+      position: generateFeaturePosition(geometry.metadata.boundingBox, random),
       dimensions: {
         diameter: diameter,
         depth: isThrough ? 'through' : 5 + random() * 20
@@ -133,7 +133,7 @@ function extractHoleFeatures(geometry: any, random: () => number) {
         cutting_depth: 0.5 + random() * 2
       },
       face_ids: generateFeatureFaceIds(i, 'hole'),
-      bounding_box: generateFeatureBoundingBox(geometry.boundingBox, random)
+      bounding_box: generateFeatureBoundingBox(geometry.metadata.boundingBox, random)
     });
   }
   
@@ -153,7 +153,7 @@ function extractPocketFeatures(geometry: any, random: () => number) {
       id: `pocket_${i}`,
       type: 'rectangular_pocket',
       confidence: 0.80 + random() * 0.19,
-      position: generateFeaturePosition(geometry.boundingBox, random),
+      position: generateFeaturePosition(geometry.metadata.boundingBox, random),
       dimensions: { width, height, depth },
       machining_parameters: {
         tool_type: 'end_mill',
@@ -163,7 +163,7 @@ function extractPocketFeatures(geometry: any, random: () => number) {
         cutting_depth: 0.8 + random() * 2.2
       },
       face_ids: generateFeatureFaceIds(i + 10, 'pocket'),
-      bounding_box: generateFeatureBoundingBox(geometry.boundingBox, random)
+      bounding_box: generateFeatureBoundingBox(geometry.metadata.boundingBox, random)
     });
   }
   
@@ -180,7 +180,7 @@ function extractSlotFeatures(geometry: any, random: () => number) {
       id: 'slot_0',
       type: 'rectangular_through_slot',
       confidence: 0.78 + random() * 0.21,
-      position: generateFeaturePosition(geometry.boundingBox, random),
+      position: generateFeaturePosition(geometry.metadata.boundingBox, random),
       dimensions: { width, height, depth: 'through' },
       machining_parameters: {
         tool_type: 'end_mill',
@@ -190,7 +190,7 @@ function extractSlotFeatures(geometry: any, random: () => number) {
         cutting_depth: 1.0 + random() * 2.0
       },
       face_ids: generateFeatureFaceIds(20, 'slot'),
-      bounding_box: generateFeatureBoundingBox(geometry.boundingBox, random)
+      bounding_box: generateFeatureBoundingBox(geometry.metadata.boundingBox, random)
     });
   }
   
@@ -206,7 +206,7 @@ function extractChamferFeatures(geometry: any, random: () => number) {
       id: `chamfer_${i}`,
       type: 'chamfer',
       confidence: 0.88 + random() * 0.11,
-      position: generateFeaturePosition(geometry.boundingBox, random),
+      position: generateFeaturePosition(geometry.metadata.boundingBox, random),
       dimensions: {
         width: 0.5 + random() * 3,
         angle: 45
@@ -219,7 +219,7 @@ function extractChamferFeatures(geometry: any, random: () => number) {
         cutting_depth: 0.2 + random() * 1.0
       },
       face_ids: generateFeatureFaceIds(i + 30, 'chamfer'),
-      bounding_box: generateFeatureBoundingBox(geometry.boundingBox, random)
+      bounding_box: generateFeatureBoundingBox(geometry.metadata.boundingBox, random)
     });
   }
   
@@ -235,7 +235,7 @@ function extractRoundFeatures(geometry: any, random: () => number) {
       id: `round_${i}`,
       type: 'round',
       confidence: 0.86 + random() * 0.13,
-      position: generateFeaturePosition(geometry.boundingBox, random),
+      position: generateFeaturePosition(geometry.metadata.boundingBox, random),
       dimensions: {
         radius: 0.8 + random() * 4
       },
@@ -247,7 +247,7 @@ function extractRoundFeatures(geometry: any, random: () => number) {
         cutting_depth: 0.3 + random() * 1.2
       },
       face_ids: generateFeatureFaceIds(i + 40, 'round'),
-      bounding_box: generateFeatureBoundingBox(geometry.boundingBox, random)
+      bounding_box: generateFeatureBoundingBox(geometry.metadata.boundingBox, random)
     });
   }
   
@@ -308,7 +308,7 @@ function generateFeatureBoundingBox(geometryBBox: any, random: () => number) {
 
 function createGeometryHash(geometry: any, stepData: string): number {
   let hash = 0;
-  const dataStr = JSON.stringify(geometry.boundingBox) + stepData.substring(0, 500);
+  const dataStr = JSON.stringify(geometry.metadata?.boundingBox) + stepData.substring(0, 500);
   for (let i = 0; i < dataStr.length; i++) {
     hash = ((hash << 5) - hash) + dataStr.charCodeAt(i);
     hash = hash & hash;
