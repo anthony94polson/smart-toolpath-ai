@@ -1,11 +1,11 @@
 import { useState } from "react";
 import Header from "@/components/Header";
-import FileUpload from "@/components/FileUpload";
+
 import FeatureDetection from "@/components/FeatureDetection";
 import ToolLibrary from "@/components/ToolLibrary";
 import ToolpathGeneration from "@/components/ToolpathGeneration";
 import SimulationResults from "@/components/SimulationResults";
-import { ModelConverter } from "@/components/ModelConverter";
+
 import PythonAAGNetAnalyzer from "@/components/PythonAAGNetAnalyzer";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -123,25 +123,9 @@ const Workspace = () => {
         <div className="space-y-6">
           {currentStep === "upload" && (
             <div className="space-y-6">
-              <Tabs defaultValue="upload" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="upload">Upload STL</TabsTrigger>
-                  <TabsTrigger value="converter">Model Converter</TabsTrigger>
-                  <TabsTrigger value="onnx">PyTorch Analyzer</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="upload" className="space-y-4">
-                  <FileUpload onFileUploaded={handleFileUploaded} />
-                </TabsContent>
-                
-                <TabsContent value="converter" className="space-y-4">
-                  <ModelConverter />
-                </TabsContent>
-                
-                <TabsContent value="onnx" className="space-y-4">
-                  <PythonAAGNetAnalyzer />
-                </TabsContent>
-              </Tabs>
+            <div className="space-y-4">
+              <PythonAAGNetAnalyzer />
+            </div>
             </div>
           )}
           
