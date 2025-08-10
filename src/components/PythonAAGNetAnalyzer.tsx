@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as THREE from 'three';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Upload, Download, FileText, Eye, BarChart3 } from 'lucide-react';
@@ -57,6 +58,8 @@ const PythonAAGNetAnalyzer: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
+  const [viewerGeometry, setViewerGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [viewerFaces, setViewerFaces] = useState<any[] | null>(null);
   const { toast } = useToast();
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,20 +115,43 @@ const PythonAAGNetAnalyzer: React.FC = () => {
       
       setProgress(60);
       console.log('✅ STEP geometry parsed successfully');
-      console.log('🔄 Running AAGNet inference on real geometry...');
 
-      // Step 2: Run AAGNet inference on the parsed geometry
-      const { data, error: functionError } = await supabase.functions.invoke('real-aagnet-inference', {
+      // Build Three.js geometry for viewer
+      try {
+        const geom = new THREE.BufferGeometry();
+        if (geometryData?.vertices) {
+          geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(geometryData.vertices), 3));
+        }
+        if (geometryData?.indices) {
+          geom.setIndex(geometryData.indices);
+        }
+        if (geometryData?.normals && geometryData.normals.length > 0) {
+          geom.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(geometryData.normals), 3));
+        } else {
+          geom.computeVertexNormals();
+        }
+        geom.computeBoundingBox();
+        setViewerGeometry(geom);
+        setViewerFaces(geometryData?.faces || null);
+      } catch (gErr) {
+        console.warn('Geometry build warning:', gErr);
+      }
+
+      console.log('🔄 Running PyTorch AAGNet inference (Python)…');
+
+      // Step 2: Run Python AAGNet inference using your trained model
+      const stepBase64 = btoa(unescape(encodeURIComponent(stepContent)));
+      const { data, error: functionError } = await supabase.functions.invoke('python-aagnet-inference', {
         body: {
-          geometry: geometryData,
-          stepData: stepContent,
-          filename: file.name
+          step_data: stepBase64,
+          file_name: file.name,
+          analysis_params: { use_trained_model: true }
         }
       });
 
       setProgress(80);
 
-      console.log('📋 AAGNet inference response received');
+      console.log('📋 AAGNet (Python) response received');
 
       if (functionError) {
         console.error('❌ AAGNet inference error:', functionError);
@@ -140,29 +166,57 @@ const PythonAAGNetAnalyzer: React.FC = () => {
       console.log('✅ Analysis data received:', data);
       setProgress(90);
 
-      // Process the results
+      // Normalize features (use face ids for highlighting)
+      const normalizedFeatures = (data.features || []).map((f: any) => {
+        const pos = Array.isArray(f.position) ? { x: f.position[0], y: f.position[1], z: f.position[2] } : f.position;
+        const faceIds: number[] = f.face_ids || f.faces || [];
+        const mp = f.machining_parameters || f.machining_params || {};
+        return {
+          id: String(f.id),
+          type: String(f.type),
+          confidence: Number(f.confidence ?? 0),
+          position: pos,
+          dimensions: f.dimensions || {},
+          machining_parameters: {
+            tool_type: mp.tool_type || 'unknown',
+            tool_diameter: Number(mp.tool_diameter || mp.toolSize || 0),
+            spindle_speed: Number(mp.spindle_speed || mp.speed || 0),
+            feed_rate: Number(mp.feed_rate || 0),
+            cutting_depth: Number(mp.cutting_depth || mp.step_down || 0)
+          },
+          face_ids: faceIds,
+          bounding_box: f.bounding_box || { min: [0,0,0], max: [0,0,0] }
+        } as PythonAAGNetFeature;
+      });
+
+      // Aggregate stats
+      const featureTypeCounts: Record<string, number> = {};
+      normalizedFeatures.forEach((f: any) => {
+        featureTypeCounts[f.type] = (featureTypeCounts[f.type] || 0) + 1;
+      });
+
       const result: PythonAAGNetResult = {
-        features: data.features || [],
+        features: normalizedFeatures,
         metadata: {
-          processingTime: data.metadata?.processing_time || 0,
-          modelVersion: data.metadata?.model_version || 'AAGNet v1.0 (Real Model)',
-          confidence: data.statistics?.avg_confidence || 0
+          processingTime: Number(data.metadata?.processingTime || data.metadata?.processing_time || 0),
+          modelVersion: String(data.metadata?.modelVersion || data.metadata?.model_file || 'AAGNet (PyTorch)'),
+          confidence: Number(data.statistics?.average_confidence || data.metadata?.confidence || 0)
         },
         statistics: {
-          totalFeatures: data.features?.length || 0,
-          featureTypes: data.statistics?.feature_types || {}
+          totalFeatures: normalizedFeatures.length,
+          featureTypes: featureTypeCounts
         }
       };
 
       setAnalysisResult(result);
       setProgress(100);
 
-      console.log('✅ Real AAGNet analysis completed');
+      console.log('✅ Python AAGNet analysis completed');
       console.log('🎯 Features detected:', result.features.length);
 
       toast({
-        title: "Real AAGNet Analysis Complete",
-        description: `Detected ${result.features.length} machining features using actual geometry parsing and your trained model`,
+        title: 'AAGNet (PyTorch) Complete',
+        description: `Detected ${result.features.length} machining features with your trained model`,
       });
 
     } catch (error) {
@@ -212,6 +266,7 @@ const PythonAAGNetAnalyzer: React.FC = () => {
         position: feature.position,
         dimensions: feature.dimensions,
         confidence: feature.confidence,
+        faceIds: feature.face_ids,
         visible: true
       })),
       analysisResults: analysisResult
@@ -441,11 +496,11 @@ const PythonAAGNetAnalyzer: React.FC = () => {
               <CardContent>
                 <div className="h-96 border rounded-lg bg-gray-50">
                   <Model3DViewer
+                    geometry={viewerGeometry || undefined}
                     features={vizData.features}
                     selectedFeatureIds={selectedFeatureIds}
                     onFeatureClick={handleFeatureSelection}
                     analysisResults={vizData.analysisResults}
-                    uploadedFile={file}
                   />
                 </div>
               </CardContent>

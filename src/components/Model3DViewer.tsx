@@ -12,6 +12,7 @@ interface Model3DViewerProps {
     type: string;
     position: { x: number; y: number; z: number };
     dimensions: { [key: string]: number };
+    faceIds?: number[];
     visible: boolean;
   }>;
   selectedFeatureIds: string[];
@@ -45,16 +46,14 @@ const Model3DViewer = ({ geometry, features, selectedFeatureIds, onFeatureClick,
         color: "#c0c0c0",
         metalness: 0.8,
         roughness: 0.3,
-        transparent: true,
-        opacity: 0.8
+        vertexColors: true
       });
     } else if (material.includes('steel') || material.includes('stainless')) {
       return new THREE.MeshStandardMaterial({
         color: "#8a8a8a", 
         metalness: 0.9,
         roughness: 0.2,
-        transparent: true,
-        opacity: 0.8
+        vertexColors: true
       });
     } else {
       return new THREE.MeshStandardMaterial({
